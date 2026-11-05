@@ -206,5 +206,6 @@
   "conn.app_disconnect_confirm": "AI Usage अब {name} की जाँच नहीं करेगा। वहाँ आपका साइन-इन जैसा है वैसा रहेगा।",
   "conn.needs_node": "Node.js चाहिए — पहले इसे इंस्टॉल करें:",
   "conn.then": "फिर:",
-  "conn.needs_node_link": "Node.js चाहिए (nodejs.org या अपने पैकेज मैनेजर से)। फिर:"
+  "conn.needs_node_link": "Node.js चाहिए (nodejs.org या अपने पैकेज मैनेजर से)। फिर:",
+  "session.dismiss": "सूची से हटाएँ (सत्र अभी भी सक्रिय हो तो वापस आ जाएगा)"
 }

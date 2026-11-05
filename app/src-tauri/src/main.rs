@@ -255,6 +255,14 @@ fn get_sessions(state: State<Snapshot>) -> Vec<Session> {
     state.sessions.lock().unwrap().clone()
 }
 
+/// Removes a session from the list (and the widget/tray) right away.
+#[tauri::command]
+fn dismiss_session(app: AppHandle, provider: String, session_id: String) -> Result<(), String> {
+    ai_usage_core::sessions::remove_session(&provider, &session_id).map_err(|e| e.to_string())?;
+    poll_sessions(&app);
+    Ok(())
+}
+
 #[tauri::command]
 fn acknowledge_session(state: State<Snapshot>, key: String) {
     state.alerts.lock().unwrap().acknowledge(&key);
@@ -596,6 +604,11 @@ fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 async fn install_update(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
+    // A development build isn't an installed bundle: the updater would
+    // replace the build output with the release AppImage.
+    if cfg!(debug_assertions) {
+        return Err("development build".into());
+    }
     let update = app
         .updater()
         .map_err(|e| e.to_string())?
@@ -1042,6 +1055,7 @@ fn main() {
             get_usage,
             get_sessions,
             acknowledge_session,
+            dismiss_session,
             get_settings,
             set_bar_format,
             set_provider_bar,

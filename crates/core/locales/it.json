@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage smetterà di controllare {name}. Il tuo accesso lì resta invariato.",
   "conn.needs_node": "Richiede Node.js — installalo prima:",
   "conn.then": "Poi:",
-  "conn.needs_node_link": "Richiede Node.js (da nodejs.org o dal gestore di pacchetti). Poi:"
+  "conn.needs_node_link": "Richiede Node.js (da nodejs.org o dal gestore di pacchetti). Poi:",
+  "session.dismiss": "Rimuovi dall'elenco (ricompare se la sessione è ancora attiva)"
 }

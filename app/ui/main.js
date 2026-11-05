@@ -185,6 +185,8 @@ function renderSession(s) {
         </div>
         <div class="detail">${escapeHtml(PROVIDER_NAME[s.provider] ?? s.provider)}${detail ? " · " + escapeHtml(detail) : ""}</div>
       </div>
+      <button class="dismiss" data-act="dismiss" title="${escapeHtml(t("session.dismiss"))}"
+        aria-label="${escapeHtml(t("session.dismiss"))}">×</button>
     </div>`;
 }
 
@@ -197,6 +199,15 @@ function renderSessions() {
 }
 
 document.getElementById("sessions").addEventListener("click", (e) => {
+  if (e.target.dataset.act === "dismiss") {
+    const s = sessions.find((x) => `${x.provider}-${x.session_id}` === e.target.closest(".session").dataset.key);
+    if (s) {
+      sessions = sessions.filter((x) => x !== s);
+      renderSessions();
+      invoke("dismiss_session", { provider: s.provider, sessionId: s.session_id });
+    }
+    return;
+  }
   const card = e.target.closest(".session.needs_input");
   if (card) {
     const key = card.dataset.key;

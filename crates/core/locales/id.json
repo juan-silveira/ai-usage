@@ -206,5 +206,6 @@
   "conn.app_disconnect_confirm": "AI Usage akan berhenti memeriksa {name}. Login Anda di sana tetap seperti semula.",
   "conn.needs_node": "Perlu Node.js — pasang dulu:",
   "conn.then": "Lalu:",
-  "conn.needs_node_link": "Perlu Node.js (dari nodejs.org atau manajer paket Anda). Lalu:"
+  "conn.needs_node_link": "Perlu Node.js (dari nodejs.org atau manajer paket Anda). Lalu:",
+  "session.dismiss": "Hapus dari daftar (muncul lagi jika sesi masih aktif)"
 }

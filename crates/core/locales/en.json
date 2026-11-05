@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage will stop checking {name}. Your sign-in there stays as it is.",
   "conn.needs_node": "Needs Node.js — install it first:",
   "conn.then": "Then:",
-  "conn.needs_node_link": "Needs Node.js (from nodejs.org or your package manager). Then:"
+  "conn.needs_node_link": "Needs Node.js (from nodejs.org or your package manager). Then:",
+  "session.dismiss": "Remove from the list (it comes back if the session is still active)"
 }

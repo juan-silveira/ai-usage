@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage fragt {name} nicht mehr ab. Deine Anmeldung dort bleibt bestehen.",
   "conn.needs_node": "Benötigt Node.js – zuerst installieren:",
   "conn.then": "Danach:",
-  "conn.needs_node_link": "Benötigt Node.js (von nodejs.org oder deinem Paketmanager). Danach:"
+  "conn.needs_node_link": "Benötigt Node.js (von nodejs.org oder deinem Paketmanager). Danach:",
+  "session.dismiss": "Aus der Liste entfernen (kommt zurück, wenn die Sitzung noch aktiv ist)"
 }

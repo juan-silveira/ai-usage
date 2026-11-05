@@ -35,15 +35,22 @@ pub fn legacy_name(app: &AppHandle) {
     if let Some(new_sessions) = ai_usage_core::sessions::state_dir() {
         if let Some(new_root) = new_sessions.parent() {
             if let Some(old_root) = new_root.parent().map(|p| p.join(LEGACY_DIR)) {
-                copy_missing(
+                // Moved, not copied: a copy left behind was copied again on
+                // every start, bringing back sessions that had been removed
+                // or had expired.
+                move_missing(
                     &old_root.join("usage-cache.json"),
                     &new_root.join("usage-cache.json"),
                 );
-                if let Ok(entries) = std::fs::read_dir(old_root.join("sessions")) {
+                let old_sessions = old_root.join("sessions");
+                if let Ok(entries) = std::fs::read_dir(&old_sessions) {
                     for entry in entries.flatten() {
-                        copy_missing(&entry.path(), &new_sessions.join(entry.file_name()));
+                        move_missing(&entry.path(), &new_sessions.join(entry.file_name()));
                     }
                 }
+                // Gone once empty (remove_dir refuses non-empty ones).
+                let _ = std::fs::remove_dir(&old_sessions);
+                let _ = std::fs::remove_dir(&old_root);
             }
         }
     }
@@ -67,13 +74,24 @@ pub fn repoint_hooks() {
     }
 }
 
-fn copy_missing(from: &Path, to: &Path) {
-    if from.is_file() && !to.exists() {
+/// Moves `from` to `to` unless `to` already exists (the new location wins);
+/// either way `from` is removed, so it is migrated only once.
+fn move_missing(from: &Path, to: &Path) {
+    if !from.is_file() {
+        return;
+    }
+    if !to.exists() {
         if let Some(dir) = to.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let _ = std::fs::copy(from, to);
+        if std::fs::rename(from, to).is_ok() {
+            return;
+        }
+        if std::fs::copy(from, to).is_err() {
+            return; // keep the original if it couldn't be carried over
+        }
     }
+    let _ = std::fs::remove_file(from);
 }
 
 /// Linux autostart entry written under the old product name. Returns true

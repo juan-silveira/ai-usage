@@ -59,6 +59,8 @@ jobs:
             AI Usage v__VERSION__ installers.
 
             - Linux: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora) or `.AppImage`
+              (on Linux Mint / Cinnamon prefer the `.deb`: the AppImage can't show
+              the usage text in the panel there, only the icon)
             - Windows: `.msi` or `-setup.exe`
             - macOS: `.dmg` (aarch64 = Apple Silicon, x64 = Intel)
 

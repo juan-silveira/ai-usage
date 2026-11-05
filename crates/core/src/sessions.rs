@@ -208,6 +208,17 @@ fn project_name(cwd: &str) -> String {
 }
 
 /// Lists live sessions, most urgent first, deleting abandoned ones.
+/// Forgets a session (the user dismissed it, e.g. one stuck as "working"
+/// after its agent died). If the agent is still alive, its next hook event
+/// brings it back.
+pub fn remove_session(provider: &str, session_id: &str) -> std::io::Result<()> {
+    let dir = state_dir().ok_or_else(|| std::io::Error::other("no state directory"))?;
+    match std::fs::remove_file(session_path(&dir, provider, session_id)) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 pub fn list_sessions() -> Vec<Session> {
     state_dir()
         .map(|d| list_sessions_in(&d, Utc::now()))

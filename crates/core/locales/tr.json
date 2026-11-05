@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage {name} kullanımını kontrol etmeyi bırakacak. Oradaki oturumun olduğu gibi kalır.",
   "conn.needs_node": "Node.js gerekli — önce onu kurun:",
   "conn.then": "Ardından:",
-  "conn.needs_node_link": "Node.js gerekli (nodejs.org'dan veya paket yöneticinizden). Ardından:"
+  "conn.needs_node_link": "Node.js gerekli (nodejs.org'dan veya paket yöneticinizden). Ardından:",
+  "session.dismiss": "Listeden kaldır (oturum hâlâ etkinse geri gelir)"
 }

@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage przestanie sprawdzać {name}. Twoje logowanie tam pozostanie bez zmian.",
   "conn.needs_node": "Wymaga Node.js — najpierw go zainstaluj:",
   "conn.then": "Potem:",
-  "conn.needs_node_link": "Wymaga Node.js (z nodejs.org lub menedżera pakietów). Potem:"
+  "conn.needs_node_link": "Wymaga Node.js (z nodejs.org lub menedżera pakietów). Potem:",
+  "session.dismiss": "Usuń z listy (wróci, jeśli sesja nadal jest aktywna)"
 }

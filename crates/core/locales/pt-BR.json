@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "O AI Usage vai parar de consultar o {name}. Seu login lá continua como está.",
   "conn.needs_node": "Precisa do Node.js — instale antes:",
   "conn.then": "Depois:",
-  "conn.needs_node_link": "Precisa do Node.js (do nodejs.org ou do gerenciador de pacotes). Depois:"
+  "conn.needs_node_link": "Precisa do Node.js (do nodejs.org ou do gerenciador de pacotes). Depois:",
+  "session.dismiss": "Tirar da lista (volta se a sessão ainda estiver ativa)"
 }

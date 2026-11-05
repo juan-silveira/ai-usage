@@ -51,6 +51,10 @@ Download the installer for your system from
 signed: on macOS right-click the app → Open; on Windows, "More info" → "Run
 anyway".
 
+On **Linux Mint / Cinnamon, use the `.deb`**: the usage text in the panel
+comes from the system's libxapp, which the AppImage can't load (it bundles an
+older GLib), so the AppImage shows only the icon there.
+
 ## Features
 
 ### System tray
@@ -65,7 +69,9 @@ Left-click toggles the window; right-click opens the menu (refresh now,
 quit). Closing the window keeps the app in the tray.
 
 On Cinnamon (Linux Mint) the app uses the native XApp status icon (through
-libxapp), because `xapp-sn-watcher` drops the text of AppIndicator icons. On
+libxapp), because `xapp-sn-watcher` drops the text of AppIndicator icons —
+with the `.deb` install; inside the AppImage, libxapp can't load against the
+bundled GLib and only the icon is shown. On
 macOS the text is shown next to the icon; Windows trays only show the icon and
 a tooltip.
 
@@ -146,6 +152,9 @@ AppImage. `.deb`/`.rpm` installs open the download page instead.
 
 ### Everything else
 
+- Live sessions can be removed from the list with the × that appears on
+  hover — for one stuck as "working" after its agent was closed (otherwise
+  it goes away after 12 hours without events).
 - Starts with the system (on by default on the first run, straight to the
   tray), with a light/dark/follow-the-system theme for the window and widget.
 - The usage endpoints are rate limited: limits are checked every 5 minutes by

@@ -206,5 +206,6 @@
   "conn.app_disconnect_confirm": "AI Usage sẽ ngừng kiểm tra {name}. Đăng nhập của bạn ở đó vẫn giữ nguyên.",
   "conn.needs_node": "Cần Node.js — hãy cài trước:",
   "conn.then": "Sau đó:",
-  "conn.needs_node_link": "Cần Node.js (từ nodejs.org hoặc trình quản lý gói). Sau đó:"
+  "conn.needs_node_link": "Cần Node.js (từ nodejs.org hoặc trình quản lý gói). Sau đó:",
+  "session.dismiss": "Xóa khỏi danh sách (sẽ hiện lại nếu phiên vẫn đang hoạt động)"
 }

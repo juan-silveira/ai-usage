@@ -223,5 +223,6 @@
   "conn.app_disconnect_confirm": "AI Usage перестанет проверять {name}. Ваш вход там останется как есть.",
   "conn.needs_node": "Нужен Node.js — сначала установите его:",
   "conn.then": "Затем:",
-  "conn.needs_node_link": "Нужен Node.js (с nodejs.org или из менеджера пакетов). Затем:"
+  "conn.needs_node_link": "Нужен Node.js (с nodejs.org или из менеджера пакетов). Затем:",
+  "session.dismiss": "Убрать из списка (вернётся, если сессия ещё активна)"
 }
