@@ -3,6 +3,11 @@ const { listen } = window.__TAURI__.event;
 
 let latest = [];
 let sessions = [];
+// "all" or a provider id; remembered per viewer.
+let activeTab = "all";
+try {
+  activeTab = localStorage.getItem("activeTab") || "all";
+} catch {}
 // Sessions clicked while waiting: reminders stopped (key -> updated_at).
 const acknowledged = new Map();
 
@@ -49,14 +54,81 @@ function renderProvider(p) {
   return `<section class="card"><h2>${escapeHtml(p.display_name)} ${plan}</h2>${body}</section>`;
 }
 
-function render() {
+function renderLimits() {
   const root = document.getElementById("providers");
   if (latest.length === 0) return;
-  root.innerHTML = latest.map(renderProvider).join("");
+  const shown = latest.filter((p) => activeTab === "all" || p.provider === activeTab);
+  root.innerHTML = shown.length
+    ? shown.map(renderProvider).join("")
+    : `<p class="muted">Sem dados de limite para este provedor.</p>`;
   const at = new Date(latest[0].fetched_at);
   document.getElementById("updated").textContent =
     `Atualizado às ${at.toLocaleTimeString()} · a cada 60 s`;
 }
+
+function peakPercent(p) {
+  return p && p.status === "ok" && p.windows.length
+    ? Math.max(...p.windows.map((w) => w.used_percent))
+    : null;
+}
+
+/** Providers known from either the usage poll or live sessions, in poll order. */
+function providerIds() {
+  const ids = latest.map((p) => p.provider);
+  for (const s of sessions) if (!ids.includes(s.provider)) ids.push(s.provider);
+  return ids;
+}
+
+function renderTabs() {
+  const ids = providerIds();
+  if (activeTab !== "all" && !ids.includes(activeTab) && latest.length) activeTab = "all";
+  const tab = (id, label, extra) => `
+    <button role="tab" class="tab" data-tab="${escapeHtml(id)}"
+      aria-selected="${id === activeTab}" tabindex="${id === activeTab ? 0 : -1}">
+      ${escapeHtml(label)}${extra}
+    </button>`;
+  const waiting = (id) =>
+    sessions.filter((s) => s.state === "needs_input" && (id === "all" || s.provider === id)).length;
+  const alertBadge = (n) => (n ? `<span class="count" title="${n} esperando você">${n}</span>` : "");
+
+  document.getElementById("tabs").innerHTML =
+    tab("all", "Todos", alertBadge(waiting("all"))) +
+    ids
+      .map((id) => {
+        const usage = latest.find((p) => p.provider === id);
+        const pct = peakPercent(usage);
+        const pctBadge = pct == null ? "" : `<span class="pct ${severity(pct)}">${pct.toFixed(0)}%</span>`;
+        return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)));
+      })
+      .join("");
+}
+
+function render() {
+  renderTabs();
+  renderSessions();
+  renderLimits();
+}
+
+function selectTab(id) {
+  activeTab = id;
+  try {
+    localStorage.setItem("activeTab", id);
+  } catch {}
+  render();
+  document.querySelector(`.tab[data-tab="${CSS.escape(id)}"]`)?.focus();
+}
+
+document.getElementById("tabs").addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (tab) selectTab(tab.dataset.tab);
+});
+
+document.getElementById("tabs").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const ids = ["all", ...providerIds()];
+  const i = ids.indexOf(activeTab);
+  selectTab(ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length]);
+});
 
 const SESSION_STATE = {
   needs_input: "precisa de você",
@@ -93,8 +165,9 @@ function renderSession(s) {
 
 function renderSessions() {
   const root = document.getElementById("sessions");
-  root.innerHTML = sessions.length
-    ? sessions.map(renderSession).join("")
+  const shown = sessions.filter((s) => activeTab === "all" || s.provider === activeTab);
+  root.innerHTML = shown.length
+    ? shown.map(renderSession).join("")
     : `<p class="muted">Nenhuma sessão ativa.</p>`;
 }
 
@@ -111,7 +184,7 @@ document.getElementById("sessions").addEventListener("click", (e) => {
 
 listen("sessions-updated", (event) => {
   sessions = event.payload;
-  renderSessions();
+  render();
 });
 
 listen("usage-updated", (event) => {
@@ -122,12 +195,12 @@ listen("usage-updated", (event) => {
 document.getElementById("refresh").addEventListener("click", () => invoke("refresh_now"));
 
 // Keep countdowns and elapsed times ticking between updates.
-setInterval(render, 30_000);
+setInterval(renderLimits, 30_000);
 setInterval(renderSessions, 5_000);
 
 invoke("get_sessions").then((list) => {
   sessions = list;
-  renderSessions();
+  render();
 });
 
 invoke("get_usage").then((usage) => {

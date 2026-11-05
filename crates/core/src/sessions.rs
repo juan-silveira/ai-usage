@@ -110,8 +110,12 @@ fn apply_hook_event_in(
         last_turn_secs: None,
         updated_at: now,
     });
-    if !cwd.is_empty() && cwd != session.cwd {
-        session.project = project_name(&cwd);
+    // The agent's cwd follows `cd` inside the session; the project name stays
+    // the directory the session started in so it doesn't flicker.
+    if !cwd.is_empty() {
+        if session.cwd.is_empty() {
+            session.project = project_name(&cwd);
+        }
         session.cwd = cwd;
     }
     if let Some(model) = str_field("model") {
@@ -258,6 +262,15 @@ mod tests {
         assert_eq!(s.state, SessionState::Working);
         assert_eq!(s.detail.as_deref(), Some("Bash"));
         assert_eq!(s.project, "proj");
+
+        let mut sub = event("PostToolUse", json!({"tool_name": "Bash"}));
+        sub["cwd"] = json!("/home/u/proj/src");
+        apply_hook_event_in(&dir, "claude", &sub, at(25)).unwrap();
+        let s = &list_sessions_in(&dir, at(25))[0];
+        assert_eq!(
+            (s.project.as_str(), s.cwd.as_str()),
+            ("proj", "/home/u/proj/src")
+        );
 
         apply(
             "Notification",
