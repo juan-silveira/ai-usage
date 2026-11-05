@@ -1,5 +1,7 @@
 # IA Usage
 
+[![CI](https://github.com/juan-silveira/ia-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/juan-silveira/ia-usage/actions/workflows/ci.yml)
+
 Monitor de uso das assinaturas de IA (Claude Code, OpenAI Codex, …) para
 **Linux, Windows e macOS**. Fica na bandeja do sistema e mostra:
 
@@ -12,6 +14,15 @@ Monitor de uso das assinaturas de IA (Claude Code, OpenAI Codex, …) para
 Não pede senha nem login próprio: reaproveita as credenciais que as CLIs
 já guardam na máquina, **somente leitura** (nunca renova nem reescreve
 tokens, para não deslogar a CLI).
+
+## Instalação
+
+Baixe o instalador do seu sistema na página de
+[Releases](https://github.com/juan-silveira/ia-usage/releases):
+`.deb`/`.rpm`/`.AppImage` (Linux), `.msi`/`-setup.exe` (Windows) ou `.dmg`
+(macOS — `aarch64` para Apple Silicon, `x64` para Intel). Os builds não são
+assinados: no macOS abra com clique direito → Abrir; no Windows, "Mais
+informações" → "Executar assim mesmo".
 
 ## Estrutura
 
@@ -145,6 +156,20 @@ Alertas sonoros (gerados pelo app, sem arquivos de áudio): um sino curto e
 insistente quando uma sessão precisa de você e um arpejo quando conclui.
 Cada um pode ser desligado e ouvido nas preferências.
 
+## CI e releases
+
+- `.github/workflows/ci.yml` — a cada push/PR: `cargo fmt --check`, `clippy -D
+  warnings` e testes no Linux; build + testes no Windows e no macOS.
+- `.github/workflows/release.yml` — ao enviar uma tag `vX.Y.Z` (igual à
+  `version` do `Cargo.toml` do workspace), gera os instaladores dos três
+  sistemas e cria uma release **rascunho** com eles. Revise e clique em
+  "Publish": o app só enxerga releases publicadas.
+
+```sh
+# depois de atualizar version em Cargo.toml
+git tag v0.2.0 && git push origin v0.2.0
+```
+
 ## Roadmap
 
 - [x] Estado das sessões ativas via hooks, com alertas e lembretes
@@ -161,7 +186,8 @@ Cada um pode ser desligado e ouvido nas preferências.
 - [x] Iniciar com o sistema
 - [x] Botão de conectar (login pela CLI oficial) e hooks pelo app
 - [x] Tema claro/escuro
-- [ ] CI com builds para os três SOs
+- [x] CI com builds para os três SOs
+- [ ] Assinatura de código (macOS notarização, Windows Authenticode)
 
 ## Referências
 

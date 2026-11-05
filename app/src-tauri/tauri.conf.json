@@ -32,7 +32,15 @@
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
-      "icons/icon.png"
-    ]
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Uso das IAs (Claude, Codex) na barra do sistema",
+    "longDescription": "Monitor de limites de uso e sessões ao vivo do Claude Code e do OpenAI Codex, com alertas, widget flutuante e item na barra do sistema.",
+    "category": "DeveloperTool",
+    "publisher": "Juan Silveira",
+    "homepage": "https://github.com/juan-silveira/ia-usage",
+    "license": "MIT"
   }
 }

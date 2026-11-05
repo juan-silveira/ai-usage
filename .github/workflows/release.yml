@@ -1,0 +1,65 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in app/src-tauri/Cargo.toml,
+# i.e. the workspace version) to build installers for every platform and
+# attach them to a GitHub release. The release starts as a draft: review it
+# and click "Publish" — the app's update check only sees published releases.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (.deb, .rpm, .AppImage)
+            os: ubuntu-22.04
+            args: ""
+          - name: Windows (.msi, .exe)
+            os: windows-latest
+            args: ""
+          - name: macOS Apple Silicon (.dmg)
+            os: macos-latest
+            args: --target aarch64-apple-darwin
+          - name: macOS Intel (.dmg)
+            os: macos-latest
+            args: --target x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependências do Tauri (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: IA Usage v__VERSION__
+          releaseBody: |
+            Instaladores do IA Usage v__VERSION__.
+
+            - Linux: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora) ou `.AppImage`
+            - Windows: `.msi` ou `-setup.exe`
+            - macOS: `.dmg` (aarch64 = Apple Silicon, x64 = Intel)
+
+            Os builds não são assinados: no macOS, abra com clique direito → Abrir;
+            no Windows, "Mais informações" → "Executar assim mesmo".
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
