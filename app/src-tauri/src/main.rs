@@ -396,8 +396,11 @@ fn change_settings(
     Ok(settings)
 }
 
+/// Async on purpose: creating a window from a synchronous command deadlocks
+/// on Windows (WebView2 needs the main thread the command would block), so
+/// the widget only appeared after restarting the app.
 #[tauri::command]
-fn set_widget_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+async fn set_widget_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let settings = change_settings(&app, |s| s.widget.enabled = enabled)?;
     if enabled {
         widget::open(&app, &settings.widget).map_err(|e| e.to_string())
