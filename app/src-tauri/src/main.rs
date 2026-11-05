@@ -792,6 +792,10 @@ fn main() {
             if !configured {
                 let _ = app.autolaunch().enable();
                 let _ = change_settings(app.handle(), |s| s.autostart_configured = true);
+            } else if app.autolaunch().is_enabled().unwrap_or(false) {
+                // Rewrite the entry so it points at this executable, in case
+                // the app was moved, renamed or updated to another path.
+                let _ = app.autolaunch().enable();
             }
             let widget_settings = app
                 .state::<Snapshot>()
