@@ -511,8 +511,12 @@ function connStatus(id) {
 function renderConnections() {
   const root = document.getElementById("connections");
   if (!connections.length) return;
-  if (root.contains(document.activeElement) && document.activeElement.tagName === "INPUT"
-      && ["text", "password"].includes(document.activeElement.type)) return; // don't wipe a code or key being typed
+  // Don't wipe a code or key being typed. Only while it has text: the code
+  // field stays focused (and empty) after sending, and the list must still
+  // update when the sign-in finishes.
+  const typing = document.activeElement;
+  if (root.contains(typing) && typing.tagName === "INPUT"
+      && ["text", "password"].includes(typing.type) && typing.value) return;
   root.innerHTML = connections
     .map((c) => {
       if (c.kind !== "cli") return renderOtherConnection(c);
