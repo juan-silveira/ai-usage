@@ -7,6 +7,8 @@ let usage = [];
 let sessions = [];
 let levels = { session: [80, 95], weekly: [80, 95] };
 let sessionsMode = "summary";
+let hidden = [];
+const shown = (list) => list.filter((x) => !hidden.includes(x.provider));
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -26,10 +28,16 @@ function left(iso) {
   return `${Math.floor(secs / 86400)}d${Math.floor((secs % 86400) / 3600)}h`;
 }
 
-const SHORT = { session: "5h", weekly: "sem" };
+function shortLabel(w) {
+  if (w.key === "session") return t("short.session");
+  if (w.key !== "weekly") return w.key.replace(/^weekly_/, "").slice(0, 4);
+  if (w.days == null || w.days === 7) return t("short.weekly");
+  if (w.days >= 28 && w.days <= 31) return t("short.monthly");
+  return t("short.days", { n: w.days });
+}
 
 function line(w) {
-  const k = w.label === "Mensal" ? "mês" : SHORT[w.key] ?? w.label.replace(/^Semanal · /, "").slice(0, 4);
+  const k = shortLabel(w);
   return `<div class="line">
     <span class="k">${escapeHtml(k)}</span>
     <span class="bar"><span class="fill ${severity(w.used_percent, w.key)}" style="display:block;width:${w.used_percent}%"></span></span>
@@ -39,7 +47,7 @@ function line(w) {
 }
 
 function render() {
-  const ok = usage.filter((p) => p.status === "ok");
+  const ok = shown(usage).filter((p) => p.status === "ok");
   document.getElementById("rows").innerHTML = ok.length
     ? ok
         .map((p) => {
@@ -51,7 +59,7 @@ function render() {
           return `<div class="row">${icon}<div>${windows.map(line).join("")}</div></div>`;
         })
         .join("")
-    : `<div class="empty">Sem dados de uso</div>`;
+    : `<div class="empty">${escapeHtml(t("widget.no_data"))}</div>`;
 
   document.getElementById("sessions").innerHTML =
     sessionsMode === "hidden" ? "" : sessionsMode === "list" ? sessionList() : sessionSummary();
@@ -59,20 +67,16 @@ function render() {
 }
 
 function sessionSummary() {
-  const waiting = sessions.filter((s) => s.state === "needs_input").length;
-  const working = sessions.filter((s) => s.state === "working").length;
+  const list = shown(sessions);
+  const waiting = list.filter((s) => s.state === "needs_input").length;
+  const working = list.filter((s) => s.state === "working").length;
   const parts = [];
-  if (waiting) parts.push(`<span class="waiting">⚠ ${waiting} esperando você</span>`);
-  if (working) parts.push(`<span>● ${working} trabalhando</span>`);
+  if (waiting) parts.push(`<span class="waiting">⚠ ${escapeHtml(t("tabs.waiting", { n: waiting }))}</span>`);
+  if (working) parts.push(`<span>● ${escapeHtml(t("widget.working", { n: working }))}</span>`);
   return parts.join("");
 }
 
-const STATE = {
-  needs_input: ["⚠", "precisa de você"],
-  working: ["●", "trabalhando"],
-  done: ["✓", "concluída"],
-  idle: ["○", "ociosa"],
-};
+const MARK = { needs_input: "⚠", working: "●", done: "✓", idle: "○" };
 const MAX_LISTED = 6;
 
 function ago(iso) {
@@ -84,8 +88,10 @@ function ago(iso) {
 
 // Sessions arrive sorted most urgent first.
 function sessionList() {
-  const rows = sessions.slice(0, MAX_LISTED).map((s) => {
-    const [mark, label] = STATE[s.state] ?? ["·", s.state];
+  const list = shown(sessions);
+  const rows = list.slice(0, MAX_LISTED).map((s) => {
+    const mark = MARK[s.state] ?? "·";
+    const label = escapeHtml(t(`session.state.${s.state}`));
     const since = s.state === "working" && s.turn_started_at ? s.turn_started_at : s.updated_at;
     const icon = ICON[s.provider] ? `<img src="${ICON[s.provider]}" alt="" />` : "";
     return `<div class="session ${s.state}">
@@ -95,8 +101,8 @@ function sessionList() {
       <span class="when">${ago(since)}</span>
     </div>`;
   });
-  const more = sessions.length - MAX_LISTED;
-  if (more > 0) rows.push(`<div class="more">+${more} sessões</div>`);
+  const more = list.length - MAX_LISTED;
+  if (more > 0) rows.push(`<div class="more">${escapeHtml(t("widget.more", { n: more }))}</div>`);
   return rows.join("");
 }
 
@@ -111,6 +117,7 @@ function fit() {
 function applySettings(s) {
   levels = { session: s.alert_session, weekly: s.alert_weekly };
   sessionsMode = s.widget.sessions;
+  hidden = s.widget.hidden_providers ?? [];
   document.getElementById("sessions").classList.toggle("list", sessionsMode === "list");
   const root = document.documentElement;
   root.style.setProperty("--bg-alpha", s.widget.opacity);

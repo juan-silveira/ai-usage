@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 
+use ai_usage_core::i18n::tf;
 use ai_usage_core::{cli_locate, hook_install};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -49,7 +50,7 @@ fn agent(id: &str) -> Result<&'static Agent, String> {
     AGENTS
         .iter()
         .find(|a| a.id == id)
-        .ok_or_else(|| format!("provedor desconhecido: {id}"))
+        .ok_or_else(|| tf("err.unknown_provider", &[("id", &id)]))
 }
 
 #[derive(Serialize)]
@@ -98,9 +99,9 @@ struct LoginEvent {
 pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
     let agent = agent(&provider)?;
     let cli = cli_locate::find(agent.cli).ok_or_else(|| {
-        format!(
-            "{} não encontrado. Instale com: {}",
-            agent.cli, agent.install
+        tf(
+            "err.cli_not_found_install",
+            &[("cli", &agent.cli), ("install", &agent.install)],
         )
     })?;
 
@@ -116,10 +117,10 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("não foi possível iniciar {}: {e}", agent.cli))?;
-    let stdin = child.stdin.take().ok_or("sem stdin")?;
-    let stdout = child.stdout.take().ok_or("sem stdout")?;
-    let stderr = child.stderr.take().ok_or("sem stderr")?;
+        .map_err(|e| tf("err.cli_start", &[("cli", &agent.cli), ("error", &e)]))?;
+    let stdin = child.stdin.take().ok_or("no stdin")?;
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let stderr = child.stderr.take().ok_or("no stderr")?;
     running.insert(provider.clone(), (child, stdin));
     drop(running);
 
@@ -177,9 +178,7 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
 pub fn send_login_code(app: AppHandle, provider: String, code: String) -> Result<(), String> {
     let logins = app.state::<Logins>();
     let mut running = logins.0.lock().unwrap();
-    let (_, stdin) = running
-        .get_mut(&provider)
-        .ok_or("nenhum login em andamento")?;
+    let (_, stdin) = running.get_mut(&provider).ok_or("no sign-in in progress")?;
     writeln!(stdin, "{}", code.trim()).map_err(|e| e.to_string())
 }
 
@@ -198,13 +197,14 @@ pub fn cancel_login(app: AppHandle, provider: String) {
 #[tauri::command]
 pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
     let agent = agent(&provider)?;
-    let cli = cli_locate::find(agent.cli).ok_or_else(|| format!("{} não encontrado", agent.cli))?;
+    let cli = cli_locate::find(agent.cli)
+        .ok_or_else(|| tf("err.cli_not_found", &[("cli", &agent.cli)]))?;
     let out = Command::new(&cli)
         .args(agent.logout_args)
         .env("PATH", cli_locate::child_path(&cli))
         .stdin(Stdio::null())
         .output()
-        .map_err(|e| format!("não foi possível executar {}: {e}", agent.cli))?;
+        .map_err(|e| tf("err.cli_start", &[("cli", &agent.cli), ("error", &e)]))?;
     app.state::<crate::Snapshot>()
         .poller
         .lock()
@@ -216,7 +216,10 @@ pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
     } else {
         let err = strip_ansi(String::from_utf8_lossy(&out.stderr).trim());
         Err(if err.is_empty() {
-            format!("{} saiu com {}", agent.cli, out.status)
+            tf(
+                "err.cli_exit",
+                &[("cli", &agent.cli), ("status", &out.status)],
+            )
         } else {
             err
         })
@@ -227,7 +230,8 @@ pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
 /// executable (`<app> hook <provider>`), so no separate CLI is needed.
 #[tauri::command]
 pub fn set_hooks(provider: String, enabled: bool) -> Result<(), String> {
-    let target = hook_install::target(&provider).ok_or("provedor desconhecido")?;
+    let target = hook_install::target(&provider)
+        .ok_or_else(|| tf("err.unknown_provider", &[("id", &provider)]))?;
     if enabled {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let exe = exe.canonicalize().unwrap_or(exe);

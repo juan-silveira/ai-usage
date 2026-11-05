@@ -32,13 +32,16 @@ pub struct WidgetSettings {
     pub color: Option<String>,
     #[serde(default)]
     pub sessions: SessionsMode,
+    /// Provider ids left out of the widget (usage rows and sessions).
+    #[serde(default)]
+    pub hidden_providers: Vec<String>,
 }
 
 /// How live sessions appear in the widget.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionsMode {
-    /// Counts: "⚠ 1 esperando você · ● 2 trabalhando".
+    /// Counts: "⚠ 1 waiting for you · ● 2 working".
     #[default]
     Summary,
     /// One line per session with project, state and time.
@@ -66,6 +69,7 @@ impl Default for WidgetSettings {
             y: None,
             color: None,
             sessions: SessionsMode::default(),
+            hidden_providers: Vec::new(),
         }
     }
 }

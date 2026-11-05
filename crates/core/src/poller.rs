@@ -138,7 +138,7 @@ fn held_back(
     retry_at: DateTime<Utc>,
 ) -> ProviderUsage {
     match &state.last_ok {
-        Some(last) => with_stale(last, "limite de consultas (HTTP 429)", Some(retry_at)),
+        Some(last) => with_stale(last, &crate::i18n::t("stale.rate_limited"), Some(retry_at)),
         None => placeholder,
     }
 }
@@ -245,6 +245,7 @@ mod tests {
         ProviderStatus::Ok {
             windows: vec![UsageWindow {
                 key: "session".into(),
+                days: None,
                 label: "s".into(),
                 used_percent: pct,
                 resets_at: None,

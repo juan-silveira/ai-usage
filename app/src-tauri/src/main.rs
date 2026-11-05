@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use ai_usage_core::i18n::{self, t, tf};
 use ai_usage_core::{list_sessions, Poller, ProviderUsage, Session};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
@@ -77,6 +78,9 @@ struct Settings {
     autostart_configured: bool,
     #[serde(default = "enabled")]
     check_updates: bool,
+    /// Interface language: a code from `i18n::LOCALES`, or "auto".
+    #[serde(default = "auto_language")]
+    language: String,
     /// Last version announced, so each release notifies only once.
     #[serde(default)]
     update_notified: Option<String>,
@@ -105,6 +109,10 @@ fn default_poll_minutes() -> u64 {
     5
 }
 
+fn auto_language() -> String {
+    "auto".into()
+}
+
 fn default_thresholds() -> Vec<u8> {
     vec![80, 95]
 }
@@ -126,6 +134,7 @@ impl Default for Settings {
             sound_threshold: true,
             widget: WidgetSettings::default(),
             poll_minutes: default_poll_minutes(),
+            language: auto_language(),
             theme: ThemeChoice::default(),
             autostart_configured: false,
             check_updates: true,
@@ -355,6 +364,18 @@ fn set_widget_sessions(app: AppHandle, mode: widget::SessionsMode) -> Result<(),
 }
 
 #[tauri::command]
+fn set_widget_provider(app: AppHandle, provider: String, show: bool) -> Result<(), String> {
+    change_settings(&app, |s| {
+        let hidden = &mut s.widget.hidden_providers;
+        hidden.retain(|p| *p != provider);
+        if !show {
+            hidden.push(provider);
+        }
+    })
+    .map(|_| ())
+}
+
+#[tauri::command]
 fn set_widget_moving(app: AppHandle, moving: bool) -> Result<(), String> {
     if let Some(pos) = widget::set_moving(&app, moving) {
         change_settings(&app, |s| {
@@ -392,8 +413,8 @@ fn check_updates(app: &AppHandle) -> UpdateStatus {
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("AI Usage {} disponível", info.version))
-                .body("Abra a janela do AI Usage para baixar a nova versão.")
+                .title(tf("update.notify_title", &[("version", &info.version)]))
+                .body(t("update.notify_body"))
                 .show();
             let version = info.version.clone();
             let _ = change_settings(app, |s| s.update_notified = Some(version));
@@ -456,10 +477,57 @@ fn set_theme(app: AppHandle, theme: ThemeChoice) -> Result<(), String> {
     change_settings(&app, |s| s.theme = theme).map(|_| ())
 }
 
+#[derive(Serialize)]
+struct Translations {
+    /// Setting as chosen ("auto" or a code) and the locale in use.
+    setting: String,
+    locale: &'static str,
+    locales: &'static [(&'static str, &'static str)],
+    strings: std::collections::HashMap<String, String>,
+}
+
+#[tauri::command]
+fn get_translations(state: State<Snapshot>) -> Translations {
+    Translations {
+        setting: state.settings.lock().unwrap().language.clone(),
+        locale: i18n::locale(),
+        locales: i18n::LOCALES,
+        strings: i18n::strings(),
+    }
+}
+
+/// Switches the language everywhere: tray menus, panel text, cached labels,
+/// and the web views (which reload on "language-changed").
+#[tauri::command]
+fn set_language(app: AppHandle, language: String) -> Result<(), String> {
+    i18n::set_locale(&language);
+    change_settings(&app, |s| s.language = language)?;
+    let snapshot = app.state::<Snapshot>();
+    i18n::localize_usage(&mut snapshot.usage.lock().unwrap());
+    if let Some(menu) = snapshot.menu.lock().unwrap().as_ref() {
+        for (id, key) in [
+            ("show", "tray.toggle"),
+            ("refresh", "tray.refresh"),
+            ("quit", "tray.quit"),
+        ] {
+            if let Some(item) = menu.get(id).and_then(|i| i.as_menuitem().cloned()) {
+                let _ = item.set_text(t(key));
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = app.run_on_main_thread(xapp_tray::relabel);
+    }
+    update_tray(&app);
+    let _ = app.emit("language-changed", ());
+    Ok(())
+}
+
 #[tauri::command]
 fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     if !url.starts_with("https://") {
-        return Err("só links https".into());
+        return Err(t("err.https_only"));
     }
     app.opener()
         .open_url(url, None::<&str>)
@@ -492,7 +560,8 @@ fn refresh_now(app: AppHandle) {
 
 fn poll_usage(app: &AppHandle) {
     let snapshot = app.state::<Snapshot>();
-    let usage = snapshot.poller.lock().unwrap().poll();
+    let mut usage = snapshot.poller.lock().unwrap().poll();
+    i18n::localize_usage(&mut usage);
     *snapshot.usage.lock().unwrap() = usage.clone();
 
     let settings = snapshot.settings.lock().unwrap().clone();
@@ -518,7 +587,8 @@ fn poll_usage(app: &AppHandle) {
 }
 
 fn poll_sessions(app: &AppHandle) {
-    let sessions = list_sessions();
+    let mut sessions = list_sessions();
+    i18n::localize_sessions(&mut sessions);
     let snapshot = app.state::<Snapshot>();
     let alerts = snapshot
         .alerts
@@ -684,9 +754,9 @@ fn toggle_window(app: &AppHandle) {
 }
 
 fn build_menu(app: &mut tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
-    let show = MenuItem::with_id(app, "show", "Mostrar / ocultar", true, None::<&str>)?;
-    let refresh = MenuItem::with_id(app, "refresh", "Atualizar agora", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", t("tray.toggle"), true, None::<&str>)?;
+    let refresh = MenuItem::with_id(app, "refresh", t("tray.refresh"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t("tray.quit"), true, None::<&str>)?;
     Menu::with_items(app, &[&show, &refresh, &quit])
 }
 
@@ -726,6 +796,7 @@ fn main() {
             set_widget_opacity,
             set_widget_color,
             set_widget_sessions,
+            set_widget_provider,
             set_widget_moving,
             widget_fit,
             check_updates_now,
@@ -733,6 +804,8 @@ fn main() {
             set_check_updates,
             set_poll_minutes,
             set_theme,
+            get_translations,
+            set_language,
             open_url,
             get_autostart,
             set_autostart,
@@ -749,7 +822,9 @@ fn main() {
         ])
         .setup(|app| {
             migrate::legacy_name(app.handle());
-            *app.state::<Snapshot>().settings.lock().unwrap() = Settings::load(app.handle());
+            let settings = Settings::load(app.handle());
+            i18n::set_locale(&settings.language);
+            *app.state::<Snapshot>().settings.lock().unwrap() = settings;
             migrate::repoint_hooks();
 
             #[cfg(target_os = "linux")]

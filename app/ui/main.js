@@ -11,11 +11,9 @@ try {
 // Sessions clicked while waiting: reminders stopped (key -> updated_at).
 const acknowledged = new Map();
 
-const STATUS_TEXT = {
-  no_credentials: "Sem login — instale e entre na CLI deste provedor.",
-  token_expired: "Token expirado — rode a CLI do provedor (claude, codex) para renovar.",
-  rate_limited: "Limite de consultas atingido (HTTP 429). Nova tentativa automática em alguns minutos.",
-};
+const STATUS_TEXT = ["no_credentials", "token_expired", "rate_limited"];
+const LOCALE = I18N.locale;
+const hhmm = (d) => d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -27,8 +25,7 @@ function resetText(iso) {
   const mins = Math.max(0, Math.round((at - Date.now()) / 60000));
   const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
   const left = d > 0 ? `${d}d ${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
-  const when = at.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
-  return `reinicia em ${left} · ${when}`;
+  return t("limits.resets", { left, when: `${weekdayShort(at)} ${hhmm(at)}` });
 }
 
 // Green below the window's first alert level, yellow from it, red only when
@@ -47,11 +44,9 @@ function worstSeverity(p) {
 
 function staleNotice(p) {
   if (!p.stale) return "";
-  const at = new Date(p.fetched_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  const retry = p.stale.retry_at
-    ? ` · nova tentativa às ${new Date(p.stale.retry_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
-    : "";
-  return `<p class="stale">Dados de ${at} — ${escapeHtml(p.stale.reason)}${retry}</p>`;
+  const at = hhmm(new Date(p.fetched_at));
+  const retry = p.stale.retry_at ? t("stale.retry_at", { at: hhmm(new Date(p.stale.retry_at)) }) : "";
+  return `<p class="stale">${escapeHtml(t("stale.data_from", { at, reason: p.stale.reason }) + retry)}</p>`;
 }
 
 function renderProvider(p) {
@@ -69,7 +64,8 @@ function renderProvider(p) {
       )
       .join("");
   } else {
-    body = `<p class="status">${escapeHtml(STATUS_TEXT[p.status] ?? `Erro: ${p.message}`)}</p>`;
+    const text = STATUS_TEXT.includes(p.status) ? t(`status.${p.status}`) : t("status.error", { message: p.message });
+    body = `<p class="status">${escapeHtml(text)}</p>`;
   }
   return `<section class="card"><h2>${escapeHtml(p.display_name)} ${plan}</h2>${body}${staleNotice(p)}</section>`;
 }
@@ -80,11 +76,11 @@ function renderLimits() {
   const shown = latest.filter((p) => activeTab === "all" || p.provider === activeTab);
   root.innerHTML = shown.length
     ? shown.map(renderProvider).join("")
-    : `<p class="muted">Sem dados de limite para este provedor.</p>`;
+    : `<p class="muted">${escapeHtml(t("limits.none_for_provider"))}</p>`;
   const fresh = latest.filter((p) => !p.stale).map((p) => new Date(p.fetched_at));
   const at = fresh.length ? new Date(Math.max(...fresh)) : new Date(latest[0].fetched_at);
   document.getElementById("updated").textContent =
-    `Atualizado às ${at.toLocaleTimeString()} · a cada ${pollEvery} min`;
+    t("limits.updated", { at: at.toLocaleTimeString(LOCALE), n: pollEvery });
 }
 
 function peakPercent(p) {
@@ -110,10 +106,10 @@ function renderTabs() {
     </button>`;
   const waiting = (id) =>
     sessions.filter((s) => s.state === "needs_input" && (id === "all" || s.provider === id)).length;
-  const alertBadge = (n) => (n ? `<span class="count" title="${n} esperando você">${n}</span>` : "");
+  const alertBadge = (n) => (n ? `<span class="count" title="${escapeHtml(t("tabs.waiting", { n }))}">${n}</span>` : "");
 
   document.getElementById("tabs").innerHTML =
-    tab("all", "Todos", alertBadge(waiting("all"))) +
+    tab("all", t("tabs.all"), alertBadge(waiting("all"))) +
     ids
       .map((id) => {
         const usage = latest.find((p) => p.provider === id);
@@ -122,7 +118,7 @@ function renderTabs() {
         return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)));
       })
       .join("") +
-    `<button role="tab" class="tab gear" data-tab="settings" title="Preferências" aria-label="Preferências"
+    `<button role="tab" class="tab gear" data-tab="settings" title="${escapeHtml(t("tabs.settings"))}" aria-label="${escapeHtml(t("tabs.settings"))}"
       aria-selected="${activeTab === "settings"}" tabindex="${activeTab === "settings" ? 0 : -1}">⚙</button>`;
   document.getElementById("view-usage").hidden = activeTab === "settings";
   document.getElementById("view-settings").hidden = activeTab !== "settings";
@@ -155,12 +151,6 @@ document.getElementById("tabs").addEventListener("keydown", (e) => {
   selectTab(ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length]);
 });
 
-const SESSION_STATE = {
-  needs_input: "precisa de você",
-  done: "concluída",
-  working: "trabalhando",
-  idle: "ociosa",
-};
 const PROVIDER_NAME = { claude: "Claude", codex: "Codex" };
 
 function ago(iso) {
@@ -174,14 +164,14 @@ function renderSession(s) {
   const key = `${s.provider}-${s.session_id}`;
   const since = s.state === "working" && s.turn_started_at ? s.turn_started_at : s.updated_at;
   const detail = s.detail ?? (s.state === "done" && s.last_turn_secs != null
-    ? `turno de ${Math.max(1, Math.round(s.last_turn_secs / 60))} min`
+    ? t("session.turn", { n: Math.max(1, Math.round(s.last_turn_secs / 60)) })
     : "");
   return `
     <div class="session ${s.state}${acknowledged.get(key) === s.updated_at ? " acknowledged" : ""}" data-key="${escapeHtml(key)}" title="${escapeHtml(s.cwd)}">
       <div class="main">
         <div class="top">
           <span class="project">${escapeHtml(s.project)}</span>
-          <span class="badge"><span class="dot">●</span> ${SESSION_STATE[s.state]} · ${ago(since)}</span>
+          <span class="badge"><span class="dot">●</span> ${escapeHtml(t(`session.state.${s.state}`))} · ${ago(since)}</span>
         </div>
         <div class="detail">${escapeHtml(PROVIDER_NAME[s.provider] ?? s.provider)}${detail ? " · " + escapeHtml(detail) : ""}</div>
       </div>
@@ -193,7 +183,7 @@ function renderSessions() {
   const shown = sessions.filter((s) => activeTab === "all" || s.provider === activeTab);
   root.innerHTML = shown.length
     ? shown.map(renderSession).join("")
-    : `<p class="muted">Nenhuma sessão ativa.</p>`;
+    : `<p class="muted">${escapeHtml(t("sessions.none"))}</p>`;
 }
 
 document.getElementById("sessions").addEventListener("click", (e) => {
@@ -269,8 +259,8 @@ function barPreview(id, cfg) {
           : secs < 86400 ? `${Math.floor(secs / 3600)}h${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}`
           : `${Math.floor(secs / 86400)}d${Math.floor((secs % 86400) / 3600)}h`;
       } else {
-        const hm = at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-        when = secs < 86400 ? hm : `${["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][at.getDay()]} ${hm}`;
+        const hm = at.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit", hour12: false });
+        when = secs < 86400 ? hm : `${weekdayShort(at)} ${hm}`;
       }
       value += ` · ${when}`;
     }
@@ -300,8 +290,8 @@ function renderProviderBar() {
           ${off || !cfg.show ? "" : barPreview(id, cfg)}
         </div>
         <div class="opts${dim}">
-          <label><input type="checkbox" data-field="show_icon" ${cfg.show_icon ? "checked" : ""} /> Ícone</label>
-          <label><input type="checkbox" data-field="show_name" ${cfg.show_name ? "checked" : ""} /> Nome</label>
+          <label><input type="checkbox" data-field="show_icon" ${cfg.show_icon ? "checked" : ""} /> ${escapeHtml(t("bar.icon"))}</label>
+          <label><input type="checkbox" data-field="show_name" ${cfg.show_name ? "checked" : ""} /> ${escapeHtml(t("bar.name"))}</label>
           <input type="text" data-field="name" maxlength="16" value="${escapeHtml(cfg.name)}"
             placeholder="${escapeHtml(barSettings.default_names[id] ?? "")}" ${cfg.show_name ? "" : "disabled"} />
         </div>
@@ -362,19 +352,22 @@ const updateStatus = document.getElementById("update-status");
 function showUpdate(status) {
   const u = status.update;
   updateBanner.hidden = !u;
-  if (u) document.getElementById("update-text").textContent = `Nova versão ${u.version} disponível`;
-  updateStatus.textContent = status.error
-    ? `Versão ${status.current} · não foi possível verificar (${status.error})`
+  if (u) document.getElementById("update-text").textContent = t("update.banner", { version: u.version });
+  const { current, error } = status;
+  updateStatus.textContent = error
+    ? t("update.status_error", { current, error })
     : u
-      ? `Versão ${status.current} · ${u.version} disponível`
-      : `Versão ${status.current} · nenhuma atualização encontrada`;
+      ? t("update.status_available", { current, version: u.version })
+      : t("update.status_none", { current });
 }
 document.getElementById("update-open").addEventListener("click", () => invoke("open_update"));
 document.getElementById("check-now").addEventListener("click", async () => {
-  updateStatus.textContent = "Verificando…";
+  updateStatus.textContent = t("update.checking");
   showUpdate(await invoke("check_updates_now"));
 });
 const pollMinutes = document.getElementById("poll-minutes");
+for (const opt of pollMinutes.options)
+  opt.textContent = t(opt.value === "5" ? "polling.recommended" : "polling.minutes", { n: opt.value });
 let pollEvery = 5;
 pollMinutes.addEventListener("change", () => {
   pollEvery = Number(pollMinutes.value);
@@ -394,7 +387,7 @@ let widgetMoving = false;
 
 function renderWidgetControls() {
   widgetMove.disabled = !widgetEnabled.checked;
-  widgetMove.textContent = widgetMoving ? "Fixar" : "Mover";
+  widgetMove.textContent = t(widgetMoving ? "widget.pin" : "widget.move");
   widgetMove.classList.toggle("active", widgetMoving);
 }
 widgetEnabled.addEventListener("change", async () => {
@@ -462,18 +455,18 @@ const loginState = {}; // provider -> { url, line, result }
 
 function connStatus(id) {
   const p = latest.find((x) => x.provider === id);
-  if (!p) return { text: "Verificando…", cls: "" };
+  if (!p) return { text: t("conn.checking"), cls: "" };
   switch (p.status) {
     case "ok":
-      return { text: `Conectado${p.plan ? ` · plano ${p.plan}` : ""}`, cls: "ok" };
+      return { text: p.plan ? t("conn.connected_plan", { plan: p.plan }) : t("conn.connected"), cls: "ok" };
     case "token_expired":
-      return { text: "Login expirado — reconecte", cls: "bad" };
+      return { text: t("conn.expired"), cls: "bad" };
     case "no_credentials":
-      return { text: "Não conectado", cls: "bad" };
+      return { text: t("conn.not_connected"), cls: "bad" };
     case "rate_limited":
-      return { text: "Conectado · consultas limitadas no momento", cls: "ok" };
+      return { text: t("conn.rate_limited"), cls: "ok" };
     default:
-      return { text: "Erro ao consultar", cls: "bad" };
+      return { text: t("conn.error"), cls: "bad" };
   }
 }
 
@@ -490,42 +483,46 @@ function renderConnections() {
       const connected = st.cls === "ok";
       let action;
       if (!c.cli_path) {
-        action = `<span class="state bad">CLI não encontrada</span>`;
+        action = `<span class="state bad">${escapeHtml(t("conn.cli_missing"))}</span>`;
       } else if (c.login_running) {
-        action = `<button class="text" data-act="cancel">Cancelar</button>`;
+        action = `<button class="text" data-act="cancel">${escapeHtml(t("conn.cancel"))}</button>`;
       } else {
         const expired = latest.find((x) => x.provider === c.provider)?.status === "token_expired";
-        action = `<button class="text" data-act="login">${connected || expired ? "Reconectar" : "Conectar"}</button>`;
-        if (connected || expired) action = `<div class="actions">${action}<button class="text" data-act="logout">Desconectar</button></div>`;
+        action = `<button class="text" data-act="login">${escapeHtml(t(connected || expired ? "conn.reconnect" : "conn.connect"))}</button>`;
+        if (connected || expired)
+          action = `<div class="actions">${action}<button class="text" data-act="logout">${escapeHtml(t("conn.disconnect"))}</button></div>`;
       }
       const loginBox = c.login_running
         ? `<div class="login">
-            <span>Conclua o login no navegador que abriu.</span>
-            ${login.url ? `<span>Se ele não abriu: <a href="#" data-act="open-url">abrir link de login</a></span>` : ""}
+            <span>${escapeHtml(t("conn.finish_in_browser"))}</span>
+            ${login.url ? `<span>${escapeHtml(t("conn.no_browser"))} <a href="#" data-act="open-url">${escapeHtml(t("conn.open_link"))}</a></span>` : ""}
             <div class="row">
-              <input type="text" data-field="code" placeholder="Código, se a CLI pedir" />
-              <button class="text" data-act="send-code">Enviar</button>
+              <input type="text" data-field="code" placeholder="${escapeHtml(t("conn.code_placeholder"))}" />
+              <button class="text" data-act="send-code">${escapeHtml(t("conn.send"))}</button>
             </div>
             ${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}
           </div>`
         : login.result === false
-          ? `<div class="login"><span>O login não foi concluído.</span>${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}</div>`
+          ? `<div class="login"><span>${escapeHtml(t("conn.login_failed"))}</span>${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}</div>`
           : "";
       const logoutBox = login.confirmLogout
         ? `<div class="login">
-            <span>Isso roda <code>${escapeHtml(c.provider === "claude" ? "claude auth logout" : "codex logout")}</code>: o ${escapeHtml(c.name)} também sai da conta no terminal.</span>
+            <span>${escapeHtml(t("conn.logout_confirm", { name: c.name })).replace(
+              "{command}",
+              `<code>${escapeHtml(c.provider === "claude" ? "claude auth logout" : "codex logout")}</code>`
+            )}</span>
             <div class="row">
-              <button class="text" data-act="logout-confirm">Desconectar</button>
-              <button class="text" data-act="logout-cancel">Cancelar</button>
+              <button class="text" data-act="logout-confirm">${escapeHtml(t("conn.disconnect"))}</button>
+              <button class="text" data-act="logout-cancel">${escapeHtml(t("conn.cancel"))}</button>
             </div>
           </div>`
         : login.logoutError
-          ? `<div class="login"><span>Não foi possível desconectar.</span><span class="line">${escapeHtml(login.logoutError)}</span></div>`
+          ? `<div class="login"><span>${escapeHtml(t("conn.logout_failed"))}</span><span class="line">${escapeHtml(login.logoutError)}</span></div>`
           : "";
       const install = c.cli_path
         ? ""
         : `<div class="row"><code>${escapeHtml(c.install_command)}</code>
-             <button class="text" data-act="copy">Copiar</button></div>`;
+             <button class="text" data-act="copy">${escapeHtml(t("conn.copy"))}</button></div>`;
       return `
       <div class="conn" data-provider="${escapeHtml(c.provider)}">
         <div class="head">
@@ -538,7 +535,7 @@ function renderConnections() {
         </div>
         ${loginBox}${logoutBox}${install}
         <label class="pref"><span><input type="checkbox" data-act="hooks" ${c.hooks_installed ? "checked" : ""} ${c.cli_path ? "" : "disabled"} />
-          Sessões ao vivo (alertas de “precisa de você” e “concluiu”)</span></label>
+          ${escapeHtml(t("conn.hooks"))}</span></label>
       </div>`;
     })
     .join("");
@@ -590,7 +587,7 @@ document.getElementById("connections").addEventListener("click", async (e) => {
     invoke("open_url", { url: loginState[provider]?.url });
   } else if (act === "copy") {
     navigator.clipboard?.writeText(conn.install_command);
-    e.target.textContent = "Copiado";
+    e.target.textContent = t("conn.copied");
   }
 });
 
@@ -600,7 +597,7 @@ document.getElementById("connections").addEventListener("change", async (e) => {
   try {
     await invoke("set_hooks", { provider, enabled: e.target.checked });
   } catch (err) {
-    alert(`Não foi possível alterar os hooks: ${err}`);
+    alert(t("conn.hooks_error", { error: err }));
   }
   await loadConnections();
 });
@@ -629,7 +626,7 @@ autostart.addEventListener("change", async () => {
     await invoke("set_autostart", { enabled: autostart.checked });
   } catch (err) {
     autostart.checked = !autostart.checked;
-    alert(`Não foi possível alterar: ${err}`);
+    alert(t("general.autostart_error", { error: err }));
   }
 });
 
@@ -656,3 +653,32 @@ invoke("get_settings").then((s) => showWidgetColor(s.widget.color));
 const widgetSessions = document.getElementById("widget-sessions");
 widgetSessions.addEventListener("change", () => invoke("set_widget_sessions", { mode: widgetSessions.value }));
 invoke("get_settings").then((s) => (widgetSessions.value = s.widget.sessions));
+
+// ---------- Language ----------
+const language = document.getElementById("language");
+language.innerHTML =
+  `<option value="auto">${escapeHtml(t("language.auto"))}</option>` +
+  I18N.locales.map(([code, name]) => `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`).join("");
+language.value = I18N.setting;
+// The backend emits "language-changed", which reloads this page (i18n.js).
+language.addEventListener("change", () => invoke("set_language", { language: language.value }));
+
+// Providers shown in the widget (all unless unticked here).
+const widgetProviders = document.getElementById("widget-providers");
+let widgetHidden = [];
+function renderWidgetProviders() {
+  widgetProviders.innerHTML = ["claude", "codex", ...providerIds()]
+    .filter((id, i, all) => all.indexOf(id) === i)
+    .map((id) => `<label><input type="checkbox" data-provider="${escapeHtml(id)}" ${widgetHidden.includes(id) ? "" : "checked"} />
+      ${PROVIDER_ICON[id] ? `<img src="${PROVIDER_ICON[id]}" alt="" />` : ""}${escapeHtml(PROVIDER_NAME[id] ?? id)}</label>`)
+    .join("");
+}
+widgetProviders.addEventListener("change", (e) => {
+  const id = e.target.dataset.provider;
+  widgetHidden = widgetHidden.filter((p) => p !== id).concat(e.target.checked ? [] : [id]);
+  invoke("set_widget_provider", { provider: id, show: e.target.checked });
+});
+invoke("get_settings").then((s) => {
+  widgetHidden = s.widget.hidden_providers;
+  renderWidgetProviders();
+});

@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use ai_usage_core::i18n::tf;
 use ai_usage_core::{ProviderStatus, ProviderUsage};
 use chrono::{DateTime, Utc};
 
@@ -49,11 +50,26 @@ impl ThresholdTracker {
                     Some(t) => {
                         let reset = w
                             .resets_at
-                            .map(|r| format!(" — reinicia {}", crate::bar::local_day_time(r)))
+                            .map(|r| {
+                                tf(
+                                    "alert.usage_reset",
+                                    &[("when", &crate::bar::local_day_time(r))],
+                                )
+                            })
                             .unwrap_or_default();
                         alerts.push(UsageAlert {
-                            title: format!("{}: {} passou de {t}%", p.display_name, w.label),
-                            body: format!("Uso atual {:.0}%{reset}", w.used_percent),
+                            title: tf(
+                                "alert.usage_title",
+                                &[
+                                    ("name", &p.display_name),
+                                    ("window", &w.label),
+                                    ("level", &t),
+                                ],
+                            ),
+                            body: tf(
+                                "alert.usage_body",
+                                &[("pct", &format!("{:.0}", w.used_percent))],
+                            ) + &reset,
                         });
                         t
                     }
@@ -82,6 +98,7 @@ mod tests {
             status: ProviderStatus::Ok {
                 windows: vec![UsageWindow {
                     key: "session".into(),
+                    days: None,
                     label: "Sessão (5h)".into(),
                     used_percent: pct,
                     resets_at: DateTime::from_timestamp(reset_secs, 0),

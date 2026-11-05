@@ -51,7 +51,7 @@ struct Api {
 /// so unused slots are hidden and reused instead.
 struct Icon {
     obj: glib::Object,
-    _menu: gtk::Menu,
+    menu: gtk::Menu,
     current: Option<BarItem>,
 }
 
@@ -103,6 +103,24 @@ unsafe fn load() -> Result<Api, Box<dyn std::error::Error>> {
     })
 }
 
+/// Translation keys of the right-click menu items, in order.
+const MENU_KEYS: [&str; 3] = ["tray.toggle", "tray.refresh", "tray.quit"];
+
+/// Re-reads the menu labels after a language change.
+pub fn relabel() {
+    STATE.with(|s| {
+        let s = s.borrow();
+        let Some(state) = s.as_ref() else { return };
+        for icon in &state.icons {
+            for (item, key) in icon.menu.children().iter().zip(MENU_KEYS) {
+                if let Some(item) = item.downcast_ref::<gtk::MenuItem>() {
+                    item.set_label(&ai_usage_core::i18n::t(key));
+                }
+            }
+        }
+    });
+}
+
 /// Makes the panel show exactly `items`, creating, updating and removing
 /// icons as needed. Returns false if XApp is not in use.
 pub fn sync(items: &[BarItem]) -> bool {
@@ -140,12 +158,12 @@ impl State {
         (self.api.set_name)(raw, name.as_ptr());
 
         let menu = gtk::Menu::new();
-        for (label, action) in [
-            ("Mostrar / ocultar", self.actions.toggle),
-            ("Atualizar agora", self.actions.refresh),
-            ("Sair", |app: &AppHandle| app.exit(0)),
+        for (key, action) in [
+            (MENU_KEYS[0], self.actions.toggle),
+            (MENU_KEYS[1], self.actions.refresh),
+            (MENU_KEYS[2], |app: &AppHandle| app.exit(0)),
         ] {
-            let item = gtk::MenuItem::with_label(label);
+            let item = gtk::MenuItem::with_label(&ai_usage_core::i18n::t(key));
             let app = self.app.clone();
             item.connect_activate(move |_| action(&app));
             menu.append(&item);
@@ -164,7 +182,7 @@ impl State {
 
         Some(Icon {
             obj,
-            _menu: menu,
+            menu,
             current: None,
         })
     }

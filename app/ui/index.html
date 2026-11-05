@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,134 +8,142 @@
   </head>
   <body>
     <header>
-      <h1>Uso das IAs</h1>
-      <button id="refresh" title="Atualizar agora">↻</button>
+      <h1 data-i18n="app.heading"></h1>
+      <button id="refresh" data-i18n-title="app.refresh">↻</button>
     </header>
-    <nav id="tabs" role="tablist" aria-label="Provedores"></nav>
+    <nav id="tabs" role="tablist" data-i18n-aria-label="tabs.label"></nav>
     <div id="update-banner" hidden>
       <span id="update-text"></span>
-      <button id="update-open" class="text">Baixar</button>
+      <button id="update-open" class="text" data-i18n="update.download"></button>
     </div>
     <div id="view-usage">
-    <h2 class="section">Sessões</h2>
-    <section id="sessions"><p class="muted">Nenhuma sessão ativa.</p></section>
-    <h2 class="section">Limites</h2>
-    <main id="providers"><p class="muted">Carregando…</p></main>
+    <h2 class="section" data-i18n="section.sessions"></h2>
+    <section id="sessions"><p class="muted" data-i18n="sessions.none"></p></section>
+    <h2 class="section" data-i18n="section.limits"></h2>
+    <main id="providers"><p class="muted" data-i18n="app.loading"></p></main>
     <footer id="updated" class="muted"></footer>
     </div>
     <div id="view-settings" hidden>
-    <h2 class="section">Conexões</h2>
-    <section class="card prefs" id="connections"><p class="muted">Carregando…</p></section>
-    <h2 class="section">Geral</h2>
+    <h2 class="section" data-i18n="section.connections"></h2>
+    <section class="card prefs" id="connections"><p class="muted" data-i18n="app.loading"></p></section>
+    <h2 class="section" data-i18n="section.general"></h2>
     <section class="card prefs">
       <div class="pref">
-        <label><input type="checkbox" id="autostart" /> Iniciar com o sistema (direto na barra)</label>
+        <label><input type="checkbox" id="autostart" /> <span data-i18n="general.autostart"></span></label>
       </div>
       <label class="pref">
-        <span>Tema do app e do widget</span>
+        <span data-i18n="general.language"></span>
+        <select id="language"></select>
+      </label>
+      <label class="pref">
+        <span data-i18n="general.theme"></span>
         <select id="theme">
-          <option value="system">Seguir o sistema</option>
-          <option value="light">Claro</option>
-          <option value="dark">Escuro</option>
+          <option value="system" data-i18n="theme.system"></option>
+          <option value="light" data-i18n="theme.light"></option>
+          <option value="dark" data-i18n="theme.dark"></option>
         </select>
       </label>
     </section>
-    <h2 class="section">Consulta de limites</h2>
+    <h2 class="section" data-i18n="section.polling"></h2>
     <section class="card prefs">
       <label class="pref">
-        <span>Atualizar a cada</span>
+        <span data-i18n="polling.every"></span>
         <select id="poll-minutes">
-          <option value="1">1 min</option>
-          <option value="2">2 min</option>
-          <option value="5">5 min (recomendado)</option>
-          <option value="10">10 min</option>
-          <option value="15">15 min</option>
+          <option value="1"></option>
+          <option value="2"></option>
+          <option value="5"></option>
+          <option value="10"></option>
+          <option value="15"></option>
         </select>
       </label>
-      <p class="muted">Os provedores limitam as consultas de uso: com 1 min o Claude costuma responder “limite atingido” (HTTP 429). As sessões são em tempo real, independente disso.</p>
+      <p class="muted" data-i18n="polling.note"></p>
     </section>
-    <h2 class="section">Barra do sistema</h2>
+    <h2 class="section" data-i18n="section.bar"></h2>
     <section class="card prefs">
       <label class="pref">
-        <span>Texto na barra do sistema</span>
+        <span data-i18n="bar.text"></span>
         <select id="bar-format">
-          <option value="peak">Maior uso (17%)</option>
-          <option value="session">Sessão 5h (5%)</option>
-          <option value="session_weekly">Sessão e semanal (5/17%)</option>
-          <option value="off">Só o ícone do app</option>
+          <option value="peak" data-i18n="bar.format.peak"></option>
+          <option value="session" data-i18n="bar.format.session"></option>
+          <option value="session_weekly" data-i18n="bar.format.session_weekly"></option>
+          <option value="off" data-i18n="bar.format.off"></option>
         </select>
       </label>
       <label class="pref">
-        <span>Mostrar fim da janela</span>
+        <span data-i18n="bar.reset"></span>
         <select id="bar-reset">
-          <option value="off">Não</option>
-          <option value="remaining">Tempo restante (3h46)</option>
-          <option value="clock">Horário (12:40)</option>
+          <option value="off" data-i18n="bar.reset.off"></option>
+          <option value="remaining" data-i18n="bar.reset.remaining"></option>
+          <option value="clock" data-i18n="bar.reset.clock"></option>
         </select>
       </label>
       <div id="provider-bar"></div>
 
     </section>
-    <h2 class="section">Alertas</h2>
+    <h2 class="section" data-i18n="section.alerts"></h2>
     <section class="card prefs">
       <label class="pref">
-        <span>Sessão (5h): avisar ao passar de</span>
+        <span data-i18n="alerts.session"></span>
         <input type="text" class="levels" data-window="session" inputmode="numeric" placeholder="80, 95" />
       </label>
       <label class="pref">
-        <span>Semanal/mensal: avisar ao passar de</span>
+        <span data-i18n="alerts.weekly"></span>
         <input type="text" class="levels" data-window="weekly" inputmode="numeric" placeholder="80, 95" />
       </label>
-      <p class="muted">Porcentagens separadas por vírgula; cada uma avisa uma vez por janela. A barra fica verde abaixo da primeira faixa, amarela ao atingi-la e vermelha só em 100%. Deixe vazio para não avisar.</p>
+      <p class="muted" data-i18n="alerts.note"></p>
       <div class="pref">
-        <label><input type="checkbox" id="sound-needs-input" /> Som quando precisa de você</label>
-        <button class="small" data-preview="needs_input" title="Ouvir">▶</button>
+        <label><input type="checkbox" id="sound-needs-input" /> <span data-i18n="alerts.sound_needs_input"></span></label>
+        <button class="small" data-preview="needs_input" data-i18n-title="alerts.listen">▶</button>
       </div>
       <div class="pref">
-        <label><input type="checkbox" id="sound-done" /> Som quando conclui</label>
-        <button class="small" data-preview="done" title="Ouvir">▶</button>
+        <label><input type="checkbox" id="sound-done" /> <span data-i18n="alerts.sound_done"></span></label>
+        <button class="small" data-preview="done" data-i18n-title="alerts.listen">▶</button>
       </div>
       <div class="pref">
-        <label><input type="checkbox" id="sound-threshold" /> Som ao passar de uma faixa</label>
-        <button class="small" data-preview="threshold" title="Ouvir">▶</button>
+        <label><input type="checkbox" id="sound-threshold" /> <span data-i18n="alerts.sound_threshold"></span></label>
+        <button class="small" data-preview="threshold" data-i18n-title="alerts.listen">▶</button>
       </div>
     </section>
-    <h2 class="section">Widget flutuante</h2>
+    <h2 class="section" data-i18n="section.widget"></h2>
     <section class="card prefs">
       <div class="pref">
-        <label><input type="checkbox" id="widget-enabled" /> Mostrar widget sempre visível</label>
-        <button id="widget-move" class="text">Mover</button>
+        <label><input type="checkbox" id="widget-enabled" /> <span data-i18n="widget.enabled"></span></label>
+        <button id="widget-move" class="text"></button>
+      </div>
+      <div class="pref">
+        <span data-i18n="widget.providers"></span>
+        <span class="row-inline" id="widget-providers"></span>
       </div>
       <label class="pref">
-        <span>Sessões no widget</span>
+        <span data-i18n="widget.sessions"></span>
         <select id="widget-sessions">
-          <option value="summary">Resumo (2 trabalhando)</option>
-          <option value="list">Uma por linha</option>
-          <option value="hidden">Ocultar</option>
+          <option value="summary" data-i18n="widget.sessions.summary"></option>
+          <option value="list" data-i18n="widget.sessions.list"></option>
+          <option value="hidden" data-i18n="widget.sessions.hidden"></option>
         </select>
       </label>
       <div class="pref">
-        <span>Cor do fundo</span>
+        <span data-i18n="widget.color"></span>
         <span class="row-inline">
-          <input type="color" id="widget-color" title="Escolher cor" />
-          <button id="widget-color-reset" class="text">Cor do tema</button>
+          <input type="color" id="widget-color" data-i18n-title="widget.color_pick" />
+          <button id="widget-color-reset" class="text" data-i18n="widget.color_reset"></button>
         </span>
       </div>
       <label class="pref">
-        <span>Opacidade do fundo</span>
+        <span data-i18n="widget.opacity"></span>
         <input type="range" id="widget-opacity" min="0" max="100" step="5" />
       </label>
-      <p class="muted">O widget não recebe cliques: eles passam para o que está atrás. Use “Mover” para reposicioná-lo e clique duplo nele (ou “Fixar”) para prender.</p>
+      <p class="muted" data-i18n="widget.note"></p>
     </section>
-    <h2 class="section">Atualizações</h2>
+    <h2 class="section" data-i18n="section.updates"></h2>
     <section class="card prefs">
       <div class="pref">
-        <label><input type="checkbox" id="check-updates" /> Verificar novas versões</label>
-        <button id="check-now" class="text">Verificar agora</button>
+        <label><input type="checkbox" id="check-updates" /> <span data-i18n="updates.check"></span></label>
+        <button id="check-now" class="text" data-i18n="updates.check_now"></button>
       </div>
       <p class="muted" id="update-status"></p>
     </section>
     </div>
-    <script src="main.js"></script>
+    <script src="i18n.js" data-main="main.js"></script>
   </body>
 </html>

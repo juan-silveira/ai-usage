@@ -131,17 +131,17 @@ fn parse_usage(body: &Value) -> ProviderStatus {
             // The long window keeps the "weekly" key (alert levels, panel
             // text) even when it isn't 7 days: the Free plan has a single
             // 30-day window.
-            let (key, label) = if weekly {
-                ("weekly", long_window_label(secs))
-            } else {
-                ("session", "Sessão (5h)".to_string())
-            };
-            Some(UsageWindow {
-                key: key.into(),
-                label,
+            let mut window = UsageWindow {
+                key: if weekly { "weekly" } else { "session" }.into(),
+                label: String::new(),
+                days: secs
+                    .filter(|_| weekly)
+                    .map(|s| (s as f64 / 86_400.0).round() as u32),
                 used_percent: used.clamp(0.0, 100.0),
                 resets_at,
-            })
+            };
+            window.label = crate::i18n::window_label(&window);
+            Some(window)
         })
         .collect();
 
@@ -152,14 +152,6 @@ fn parse_usage(body: &Value) -> ProviderStatus {
     }
     windows.sort_by_key(|w| w.key != "session");
     ProviderStatus::Ok { windows }
-}
-
-fn long_window_label(secs: Option<i64>) -> String {
-    match secs.map(|s| (s as f64 / 86_400.0).round() as i64) {
-        None | Some(7) => "Semanal".into(),
-        Some(d) if (28..=31).contains(&d) => "Mensal".into(),
-        Some(d) => format!("{d} dias"),
-    }
 }
 
 #[cfg(test)]
@@ -198,7 +190,7 @@ mod tests {
         };
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].key, "weekly");
-        assert_eq!(windows[0].label, "Mensal");
+        assert_eq!(windows[0].days, Some(30));
     }
 
     #[test]

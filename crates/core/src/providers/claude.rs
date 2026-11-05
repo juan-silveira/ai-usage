@@ -132,13 +132,16 @@ fn parse_usage(body: &Value) -> ProviderStatus {
                 .and_then(Value::as_str)
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|d| d.with_timezone(&Utc));
-            let (key, label) = window_name(key);
-            Some(UsageWindow {
+            let key = window_key(key);
+            let mut window = UsageWindow {
+                days: (key != "session").then_some(7),
                 key,
-                label,
+                label: String::new(),
                 used_percent: used.clamp(0.0, 100.0),
                 resets_at,
-            })
+            };
+            window.label = crate::i18n::window_label(&window);
+            Some(window)
         })
         .collect();
 
@@ -151,18 +154,14 @@ fn parse_usage(body: &Value) -> ProviderStatus {
     ProviderStatus::Ok { windows }
 }
 
-fn window_name(raw: &str) -> (String, String) {
+fn window_key(raw: &str) -> String {
     match raw {
-        "five_hour" => ("session".into(), "Sessão (5h)".into()),
-        "seven_day" => ("weekly".into(), "Semanal".into()),
-        other => {
-            let suffix = other.strip_prefix("seven_day_").unwrap_or(other);
-            let mut label = suffix.replace('_', " ");
-            if let Some(first) = label.get_mut(0..1) {
-                first.make_ascii_uppercase();
-            }
-            (format!("weekly_{suffix}"), format!("Semanal · {label}"))
-        }
+        "five_hour" => "session".into(),
+        "seven_day" => "weekly".into(),
+        other => format!(
+            "weekly_{}",
+            other.strip_prefix("seven_day_").unwrap_or(other)
+        ),
     }
 }
 
@@ -195,7 +194,7 @@ mod tests {
         assert_eq!(keys, ["session", "weekly", "weekly_opus"]);
         assert_eq!(windows[0].used_percent, 42.0);
         assert!(windows[0].resets_at.is_some());
-        assert_eq!(windows[2].label, "Semanal · Opus");
+        assert_eq!(windows[2].days, Some(7));
     }
 
     #[test]

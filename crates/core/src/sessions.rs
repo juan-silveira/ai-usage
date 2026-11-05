@@ -14,6 +14,17 @@ use serde_json::Value;
 /// agent crashed or the terminal was closed without a SessionEnd).
 const STALE_AFTER_HOURS: i64 = 12;
 
+/// Fixed session messages, translated when shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetailKind {
+    /// Asking permission; `detail` holds the tool, if known.
+    Permission,
+    /// The turn ended with an error.
+    Failed,
+    Interrupted,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
@@ -37,6 +48,11 @@ pub struct Session {
     pub state: SessionState,
     /// Tool being run, permission being asked, or notification text.
     pub detail: Option<String>,
+    /// Set when `detail` is a fixed message, to be shown in the reader's
+    /// language (see [`crate::i18n::session_detail`]); `detail` then holds
+    /// only its argument, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_kind: Option<DetailKind>,
     pub model: Option<String>,
     pub turn_started_at: Option<DateTime<Utc>>,
     /// Length of the last completed turn, in seconds.
@@ -105,6 +121,7 @@ fn apply_hook_event_in(
         cwd: cwd.clone(),
         state: SessionState::Idle,
         detail: None,
+        detail_kind: None,
         model: None,
         turn_started_at: None,
         last_turn_secs: None,
@@ -122,6 +139,8 @@ fn apply_hook_event_in(
         session.model = Some(model.to_string());
     }
 
+    // Each event sets its own detail; a coded one must not outlive it.
+    session.detail_kind = None;
     match event {
         "SessionStart" => {
             session.state = SessionState::Idle;
@@ -139,10 +158,8 @@ fn apply_hook_event_in(
         }
         "PermissionRequest" => {
             session.state = SessionState::NeedsInput;
-            session.detail = Some(match str_field("tool_name") {
-                Some(tool) => format!("Permissão: {tool}"),
-                None => "Pedido de permissão".to_string(),
-            });
+            session.detail = str_field("tool_name").map(str::to_string);
+            session.detail_kind = Some(DetailKind::Permission);
         }
         "Notification" => match str_field("notification_type") {
             Some(
@@ -163,12 +180,14 @@ fn apply_hook_event_in(
                 .turn_started_at
                 .take()
                 .map(|start| (now - start).num_seconds());
-            session.detail = (event == "StopFailure").then(|| "Terminou com erro".to_string());
+            session.detail = None;
+            session.detail_kind = (event == "StopFailure").then_some(DetailKind::Failed);
         }
         "Interrupt" => {
             session.state = SessionState::Idle;
             session.turn_started_at = None;
-            session.detail = Some("Interrompida".to_string());
+            session.detail = None;
+            session.detail_kind = Some(DetailKind::Interrupted);
         }
         _ => return Ok(()),
     }

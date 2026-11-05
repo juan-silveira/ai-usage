@@ -6,8 +6,13 @@ use serde::{Deserialize, Serialize};
 pub struct UsageWindow {
     /// Stable identifier, e.g. "session", "weekly", "weekly_opus".
     pub key: String,
-    /// Human label shown in the UI.
+    /// Human label in the locale active when it was made; see
+    /// [`crate::i18n::window_label`] to redo it in another one.
     pub label: String,
+    /// Length of the window in days, when the provider says (Codex's Free
+    /// plan has a single 30-day window instead of a weekly one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days: Option<u32>,
     /// Percentage of the window already consumed, 0–100.
     pub used_percent: f64,
     pub resets_at: Option<DateTime<Utc>>,

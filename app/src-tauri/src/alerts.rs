@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use ai_usage_core::i18n::tf;
 use ai_usage_core::{Session, SessionState};
 use chrono::{DateTime, Utc};
 
@@ -75,7 +76,7 @@ impl AlertTracker {
                         t.last_alert = now;
                         alerts.push(Alert {
                             kind: AlertKind::NeedsInput,
-                            title: format!("Lembrete: {name} ainda espera você"),
+                            title: tf("alert.reminder", &[("name", &name)]),
                             body: describe(s),
                         });
                     }
@@ -88,7 +89,7 @@ impl AlertTracker {
                             // A new request while already waiting also alerts.
                             SessionState::NeedsInput => alerts.push(Alert {
                                 kind: AlertKind::NeedsInput,
-                                title: format!("{name} precisa de você"),
+                                title: tf("alert.needs_input", &[("name", &name)]),
                                 body: describe(s),
                             }),
                             SessionState::Done if entered => alerts.push(done_alert(name, s)),
@@ -133,13 +134,13 @@ fn done_alert(name: &str, s: &Session) -> Alert {
     if secs >= LONG_TURN_SECS {
         Alert {
             kind: AlertKind::Done,
-            title: format!("🎉 {name} concluiu após {mins} min"),
+            title: tf("alert.done_long", &[("name", &name), ("n", &mins)]),
             body: describe(s),
         }
     } else {
         Alert {
             kind: AlertKind::Done,
-            title: format!("{name} concluiu"),
+            title: tf("alert.done", &[("name", &name)]),
             body: describe(s),
         }
     }
@@ -157,6 +158,7 @@ mod tests {
             project: "proj".into(),
             state,
             detail: None,
+            detail_kind: None,
             model: None,
             turn_started_at: None,
             last_turn_secs: Some(400),
@@ -175,7 +177,7 @@ mod tests {
         let a = t.update(&[session(SessionState::Working, 2)], t0);
         assert!(a.is_empty());
         let a = t.update(&[session(SessionState::NeedsInput, 3)], t0);
-        assert_eq!(a[0].title, "Claude precisa de você");
+        assert_eq!(a[0].title, tf("alert.needs_input", &[("name", &"Claude")]));
         let a = t.update(&[session(SessionState::Done, 4)], t0);
         assert!(a[0].title.starts_with("🎉"));
     }

@@ -52,14 +52,14 @@ jobs:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: AI Usage v__VERSION__
           releaseBody: |
-            Instaladores do AI Usage v__VERSION__.
+            AI Usage v__VERSION__ installers.
 
-            - Linux: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora) ou `.AppImage`
-            - Windows: `.msi` ou `-setup.exe`
+            - Linux: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora) or `.AppImage`
+            - Windows: `.msi` or `-setup.exe`
             - macOS: `.dmg` (aarch64 = Apple Silicon, x64 = Intel)
 
-            Os builds não são assinados: no macOS, abra com clique direito → Abrir;
-            no Windows, "Mais informações" → "Executar assim mesmo".
+            The builds are not signed: on macOS, right-click the app → Open;
+            on Windows, "More info" → "Run anyway".
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

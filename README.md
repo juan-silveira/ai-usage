@@ -2,205 +2,247 @@
 
 [![CI](https://github.com/juan-silveira/ai-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/juan-silveira/ai-usage/actions/workflows/ci.yml)
 
-Monitor de uso das assinaturas de IA (Claude Code, OpenAI Codex, …) para
-**Linux, Windows e macOS**. Fica na bandeja do sistema e mostra:
+A system-tray monitor for AI coding subscriptions (Claude Code, OpenAI Codex, …)
+on **Linux, Windows and macOS**. It shows:
 
-- **Limites** (a cada minuto): o mesmo que o `/usage` do Claude Code — janela
-  de 5 h, limite semanal, limites por modelo e quando cada um reinicia.
-- **Sessões ao vivo** (via hooks): cada sessão do Claude Code / Codex aberta,
-  se está trabalhando, concluída ou **esperando você** — com notificação na
-  hora e lembrete a cada 2 min até você responder.
+- **Usage limits**: the same numbers as Claude Code's `/usage` — the 5-hour
+  window, the weekly (or, on Codex Free, monthly) limit, per-model limits, and
+  when each one resets.
+- **Live sessions** (through the agents' hooks): every open Claude Code / Codex
+  session, whether it is working, done or **waiting for you** — with a desktop
+  notification right away and a reminder every 2 minutes until you answer.
 
-Não pede senha nem login próprio: reaproveita as credenciais que as CLIs
-já guardam na máquina, **somente leitura** (nunca renova nem reescreve
-tokens, para não deslogar a CLI).
+![System tray](docs/screenshots/tray.png)
 
-## Instalação
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/main.png" width="300" alt="Main window: sessions and limits" /><br /><sub>Sessions and limits</sub></td>
+    <td align="center"><img src="docs/screenshots/settings-1.png" width="300" alt="Preferences: connections, general, limit checks, system tray" /><br /><sub>Connections and system tray</sub></td>
+    <td align="center"><img src="docs/screenshots/settings-2.png" width="300" alt="Preferences: alerts, widget, updates" /><br /><sub>Alerts, widget and updates</sub></td>
+  </tr>
+</table>
 
-Baixe o instalador do seu sistema na página de
+<p align="center"><img src="docs/screenshots/widget.png" alt="Floating widget" /><br /><sub>Floating widget (click-through, always on top)</sub></p>
+
+It needs no password or account of its own: it reuses the credentials the
+CLIs already store on your machine, **read-only** (it never refreshes or
+rewrites tokens, so it can't sign the CLI out).
+
+## Languages
+
+The interface is available in 15 languages — English, Português (Brasil),
+Español, Français, Deutsch, Italiano, Русский, Polski, Türkçe, 简体中文, 日本語,
+한국어, हिन्दी, Bahasa Indonesia and Tiếng Việt. It follows the system language
+or the one chosen in Preferences → General.
+
+Translations live in [`crates/core/locales/`](crates/core/locales), one JSON
+file per language, with `en.json` as the reference. A test checks that every
+locale has every key and the same `{placeholders}`, so adding a language is
+one file plus one line in `crates/core/src/i18n.rs`.
+
+## Install
+
+Download the installer for your system from
 [Releases](https://github.com/juan-silveira/ai-usage/releases):
-`.deb`/`.rpm`/`.AppImage` (Linux), `.msi`/`-setup.exe` (Windows) ou `.dmg`
-(macOS — `aarch64` para Apple Silicon, `x64` para Intel). Os builds não são
-assinados: no macOS abra com clique direito → Abrir; no Windows, "Mais
-informações" → "Executar assim mesmo".
+`.deb`/`.rpm`/`.AppImage` (Linux), `.msi`/`-setup.exe` (Windows) or `.dmg`
+(macOS — `aarch64` for Apple Silicon, `x64` for Intel). The builds are not
+signed: on macOS right-click the app → Open; on Windows, "More info" → "Run
+anyway".
 
-## Estrutura
+## Features
 
-```
-crates/core      biblioteca Rust: provedores, modelo de dados, HTTP
-crates/cli       `ai-usage` — imprime uso no terminal ou em JSON
-app/src-tauri    app desktop (Tauri 2): bandeja + janela flutuante
-app/ui           frontend estático (HTML/CSS/JS, sem build)
-```
+### System tray
 
-## Provedores
+One item per provider, like a weather applet: logo + usage (e.g. `✳ 7/17%`).
+In the preferences you choose the number (highest usage, 5h session,
+session + weekly, or just the app icon), whether to show when the window ends
+(time left or time of day) and, per provider, whether to show the item, the
+logo and a custom name. When a session is waiting for you the item gets `⚠1`.
 
-| Provedor | Credencial lida | Endpoint |
+Left-click toggles the window; right-click opens the menu (refresh now,
+quit). Closing the window keeps the app in the tray.
+
+On Cinnamon (Linux Mint) the app uses the native XApp status icon (through
+libxapp), because `xapp-sn-watcher` drops the text of AppIndicator icons. On
+macOS the text is shown next to the icon; Windows trays only show the icon and
+a tooltip.
+
+### Connections
+
+Preferences → Connections shows each provider's status (connected + plan,
+sign-in expired, not connected) with:
+
+- **Connect / Reconnect**: runs the CLI's official sign-in (`claude auth
+  login`, `codex login`), which opens the browser; if it doesn't, the app
+  shows the link and a field to paste the code if the CLI asks for one.
+  Without the CLI installed, it shows the install command. The CLIs are found
+  even outside the desktop's PATH (asdf, nvm, volta, global npm).
+- **Disconnect**: runs `claude auth logout` / `codex logout` after a
+  confirmation — this also signs the CLI out in the terminal, since the app
+  uses the CLI's credentials.
+- **Live sessions**: installs or removes the hooks. They call the app's own
+  executable (`ai-usage-app hook claude`), so the `ai-usage` CLI isn't needed.
+
+### Alerts
+
+Usage levels, separate for the 5-hour session and the weekly/monthly window
+(e.g. session `80, 95`, weekly `90`): each level notifies once per window,
+with its own sound, and sets the colours — green below the first level,
+yellow from it and red only at 100%.
+
+Sounds are generated by the app (no audio files): a short, insistent bell when
+a session needs you and an arpeggio when it finishes. Each one can be turned
+off or previewed in the preferences.
+
+### Floating widget
+
+An optional transparent window that stays on top and lets clicks through to
+whatever is behind it. Use "Move" in the preferences, drag it, and
+double-click to pin it again. You can pick which providers it shows, the
+background colour and opacity (the text follows the colour's brightness), and
+whether sessions appear as a summary ("2 working"), one per line (project,
+state and time, most urgent first) or not at all.
+
+### Everything else
+
+- Starts with the system (on by default on the first run, straight to the
+  tray), with a light/dark/follow-the-system theme for the window and widget.
+- Checks GitHub releases at startup and every 12 hours, and announces new
+  versions (banner + notification with a download link).
+- The usage endpoints are rate limited: limits are checked every 5 minutes by
+  default (configurable). On HTTP 429 the app honours `Retry-After` (1–30 min,
+  with exponential backoff) and keeps showing the last data, marked as stale.
+  The state is cached on disk and shared by the app and the CLI, so restarting
+  the app doesn't cause extra requests.
+
+## Providers
+
+| Provider | Credentials read | Endpoint |
 |---|---|---|
-| Claude | `~/.claude/.credentials.json` (ou `$CLAUDE_CONFIG_DIR`); no macOS, Keychain `Claude Code-credentials` | `GET api.anthropic.com/api/oauth/usage` |
-| Codex | `~/.codex/auth.json` (ou `$CODEX_HOME`) | `GET chatgpt.com/backend-api/wham/usage` |
+| Claude | `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR`); on macOS, Keychain `Claude Code-credentials` | `GET api.anthropic.com/api/oauth/usage` |
+| Codex | `~/.codex/auth.json` (or `$CODEX_HOME`) | `GET chatgpt.com/backend-api/wham/usage` |
 
-Ambos os endpoints são internos/não documentados e podem mudar.
-Para adicionar um provedor, implemente o trait `Provider` em
-`crates/core/src/providers/` e registre-o em `all_providers()`.
+Both endpoints are internal/undocumented and may change. Usage windows are
+classified by their length, so plans with different windows (Codex Free has a
+single 30-day window; Plus/Pro have 5-hour and weekly ones) are labelled
+correctly. To add a provider, implement the `Provider` trait in
+`crates/core/src/providers/` and register it in `all_providers()`.
 
-## Conexões
+## Sessions
 
-Na aba ⚙ → Conexões, cada provedor mostra o status (conectado + plano, login
-expirado, não conectado) e um botão **Conectar/Reconectar** que roda o login
-oficial da CLI (`claude auth login`, `codex login`) — ele abre o navegador; se
-não abrir, o app mostra o link, e há um campo para colar o código caso a CLI
-peça. Sem a CLI instalada, mostra o comando de instalação. O app encontra as
-CLIs mesmo fora do PATH do desktop (asdf, nvm, volta, npm global).
+`ai-usage hook <claude|codex>` is registered as a hook of the agents. On each
+event (prompt sent, tool used, permission request, turn finished, session
+ended) it writes a small JSON file per session to
+`~/.local/state/ai-usage/sessions/` (Linux),
+`~/Library/Application Support/ai-usage/sessions/` (macOS) or
+`%LOCALAPPDATA%\ai-usage\sessions\` (Windows). The app reads that folder every
+2 seconds; the hook never fails or prints anything, so it can't get in the
+agent's way, even with the app closed.
 
-O interruptor **Sessões ao vivo** instala/remove os hooks. Eles chamam o
-próprio executável do app (`ai-usage-app hook claude`), então não é preciso
-instalar a CLI `ai-usage` separadamente.
-
-O app inicia com o sistema (ligado por padrão na primeira execução, direto
-na barra, sem abrir a janela) e tem tema claro/escuro/seguir o sistema para a
-janela e o widget.
-
-## Sessões e alertas
-
-O comando `ai-usage hook <claude|codex>` é registrado como hook dos agentes.
-A cada evento (prompt enviado, ferramenta usada, pedido de permissão, turno
-concluído, sessão encerrada) ele grava um JSON pequeno por sessão em
-`~/.local/state/ai-usage/sessions/` (Linux), `~/Library/Application Support/ai-usage/sessions/`
-(macOS) ou `%LOCALAPPDATA%\ai-usage\sessions\` (Windows). O app lê essa pasta
-a cada 2 s; o hook nunca falha nem imprime nada, então não atrapalha o agente
-mesmo com o app fechado.
-
-| Evento do agente | Estado |
+| Agent event | State |
 |---|---|
-| `SessionStart` | ociosa |
-| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | trabalhando |
-| `Notification` (permissão/pergunta), `PermissionRequest` | **precisa de você** → alerta + lembrete a cada 2 min (máx. 5) |
-| `Stop` | concluída → alerta (🎉 se o turno durou ≥ 5 min) |
-| `SessionEnd` | removida |
+| `SessionStart` | idle |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | working |
+| `Notification` (permission/question), `PermissionRequest` | **needs you** → alert + reminder every 2 min (max. 5) |
+| `Stop` | done → alert (🎉 if the turn took ≥ 5 min) |
+| `SessionEnd` | removed |
 
-Clicar numa sessão "precisa de você" na janela silencia os lembretes.
+Clicking a "needs you" session in the window silences its reminders.
 
 ```sh
-cargo install --path crates/cli   # instala o binário em ~/.cargo/bin/ai-usage
-ai-usage hooks install            # Claude (~/.claude/settings.json) e Codex (~/.codex/hooks.json)
-ai-usage hooks install claude     # só um provedor
+cargo install --path crates/cli   # installs ~/.cargo/bin/ai-usage
+ai-usage hooks install            # Claude (~/.claude/settings.json) and Codex (~/.codex/hooks.json)
+ai-usage hooks install claude     # a single provider
 ai-usage hooks status
-ai-usage sessions                 # lista as sessões no terminal
-ai-usage hooks uninstall          # remove só as entradas do ai-usage
+ai-usage sessions                 # list sessions in the terminal
+ai-usage hooks uninstall          # removes only ai-usage's entries
 ```
 
-A instalação mescla com o que já existe (outros hooks e configurações ficam
-intactos), é idempotente e guarda um backup `*.ai-usage.bak` do arquivo original.
+Installing merges with what is already there (other hooks and settings are
+left alone), is idempotent and keeps a `*.ai-usage.bak` backup of the
+original file.
 
-## Uso
+## Development
+
+```
+crates/core      Rust library: providers, data model, HTTP, translations
+crates/cli       `ai-usage` — prints usage in the terminal or as JSON
+app/src-tauri    desktop app (Tauri 2): tray + floating windows
+app/ui           static frontend (HTML/CSS/JS, no build step)
+```
 
 ### CLI
 
 ```sh
-cargo run -p ai-usage-cli              # tabela
-cargo run -p ai-usage-cli -- --json    # JSON (scripts, barras de status, displays)
+cargo run -p ai-usage-cli              # table
+cargo run -p ai-usage-cli -- --json    # JSON (scripts, status bars, displays)
 cargo run -p ai-usage-cli -- --watch 60
 ```
 
-### App desktop
+The CLI follows `LANG`/`LC_ALL` (e.g. `LC_ALL=ja_JP.UTF-8 ai-usage`).
 
-Pré-requisitos: Rust estável recente ([rustup](https://rustup.rs)) e as
-[dependências do Tauri](https://v2.tauri.app/start/prerequisites/) para o seu SO.
-No Ubuntu/Debian:
+### Desktop app
+
+Requirements: a recent stable Rust ([rustup](https://rustup.rs)) and the
+[Tauri dependencies](https://v2.tauri.app/start/prerequisites/) for your OS.
+On Ubuntu/Debian:
 
 ```sh
 sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
 ```
 
 ```sh
-cargo run -p ai-usage-app                 # desenvolvimento
-cargo install tauri-cli --version '^2'    # uma vez
-cd app/src-tauri && cargo tauri build     # instaladores (.deb/.AppImage, .msi, .dmg)
+cargo run -p ai-usage-app                 # development
+cargo install tauri-cli --version '^2'    # once
+cd app/src-tauri && cargo tauri build     # installers (.deb/.AppImage, .msi, .dmg)
 ```
 
-Na barra do sistema aparece um item por provedor, como o applet de clima:
-logo + uso (ex.: `✳ 7/17%`). Nas preferências da janela dá para escolher o
-número (maior uso, sessão 5h, sessão/semanal ou só o ícone do app) e, por
-provedor, mostrar/ocultar o item, o logo e um nome personalizável.
-Quando uma sessão espera você, o item ganha `⚠1`.
+### CI and releases
 
-Clique esquerdo num item mostra/oculta a janela; o botão direito abre o
-menu (atualizar agora, sair). Fechar a janela mantém o app na bandeja.
-
-No Cinnamon (Linux Mint) o app usa o ícone nativo XApp (via libxapp), pois o
-`xapp-sn-watcher` descarta o texto de ícones AppIndicator. No macOS o texto
-aparece ao lado do ícone; no Windows a bandeja só exibe ícone e tooltip.
-
-Faixas de alerta de uso, separadas para a sessão (5 h) e a semanal (ex.: sessão
-`80, 95`, semanal `90`): cada faixa notifica uma vez por janela, com som próprio,
-e define as cores: verde abaixo da primeira faixa, amarelo a partir dela e
-vermelho só em 100%.
-
-Widget flutuante (opcional): janela transparente, sempre visível, que não
-recebe cliques (eles passam para o que está atrás). Para reposicionar, use
-"Mover" nas preferências, arraste e dê clique duplo para fixar. A cor e a
-opacidade do fundo são personalizáveis (o texto se ajusta ao brilho da cor), e
-as sessões podem aparecer resumidas ("2 trabalhando"), uma por linha
-(projeto, estado e tempo, as mais urgentes primeiro) ou ocultas.
-
-O app consulta as releases do GitHub ao iniciar e a cada 12 h e avisa quando há
-versão nova (banner + notificação com link para baixar).
-
-Os endpoints de uso têm limite de consultas: em HTTP 429 o app respeita o
-`Retry-After` (1–30 min, com recuo exponencial) e continua mostrando os últimos
-dados, marcados como desatualizados. O estado fica num cache em disco
-compartilhado entre app e CLI, então reiniciar o app não gera consultas extras.
-
-Alertas sonoros (gerados pelo app, sem arquivos de áudio): um sino curto e
-insistente quando uma sessão precisa de você e um arpejo quando conclui.
-Cada um pode ser desligado e ouvido nas preferências.
-
-## CI e releases
-
-- `.github/workflows/ci.yml` — a cada push/PR: `cargo fmt --check`, `clippy -D
-  warnings` e testes no Linux; build + testes no Windows e no macOS.
-- `.github/workflows/release.yml` — ao enviar uma tag `vX.Y.Z` (igual à
-  `version` do `Cargo.toml` do workspace), gera os instaladores dos três
-  sistemas e cria uma release **rascunho** com eles. Revise e clique em
-  "Publish": o app só enxerga releases publicadas.
+- `.github/workflows/ci.yml` — on every push/PR: `cargo fmt --check`,
+  `clippy -D warnings` and tests on Linux; build + tests on Windows and macOS.
+- `.github/workflows/release.yml` — pushing a `vX.Y.Z` tag (matching the
+  workspace `version` in `Cargo.toml`) builds the installers for the three
+  systems and creates a **draft** release with them. Review it and click
+  "Publish": the app only sees published releases.
 
 ```sh
-# depois de atualizar version em Cargo.toml
+# after updating version in Cargo.toml and tauri.conf.json
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ## Roadmap
 
-- [x] Estado das sessões ativas via hooks, com alertas e lembretes
-- [ ] Modo foco / reunião (silenciar alertas), som configurável
-- [ ] Clicar na notificação foca o terminal da sessão
-- [ ] API local (HTTP/WebSocket) para widgets e displays externos
-- [ ] Mais provedores: Gemini CLI, Cursor, Copilot, OpenRouter
-- [x] Uso na barra do sistema com logo do provedor e nome personalizável
-- [x] Alertas sonoros
-- [x] Faixas de alerta de uso por janela
-- [x] Widget flutuante transparente e com clique atravessando
-- [x] Aviso de nova versão (GitHub Releases)
-- [ ] Instalação automática de atualizações (tauri-plugin-updater + releases assinadas no CI)
-- [x] Iniciar com o sistema
-- [x] Botão de conectar (login pela CLI oficial) e hooks pelo app
-- [x] Tema claro/escuro
-- [x] CI com builds para os três SOs
-- [ ] Assinatura de código (macOS notarização, Windows Authenticode)
+- [x] Live session state through hooks, with alerts and reminders
+- [x] Usage in the system tray with provider logo and custom name
+- [x] Sound alerts
+- [x] Usage alert levels per window
+- [x] Transparent, click-through floating widget
+- [x] New version notice (GitHub Releases)
+- [x] Start with the system
+- [x] Connect/disconnect (official CLI sign-in) and hooks from the app
+- [x] Light/dark theme
+- [x] CI with builds for the three OSes
+- [x] Interface in 15 languages
+- [ ] Focus / meeting mode (mute alerts), configurable sounds
+- [ ] Clicking the notification focuses the session's terminal
+- [ ] Local API (HTTP/WebSocket) for external widgets and displays
+- [ ] More providers: Gemini CLI, Cursor, Copilot, OpenRouter
+- [ ] Automatic updates (tauri-plugin-updater + signed releases in CI)
+- [ ] Code signing (macOS notarization, Windows Authenticode)
 
-## Referências
+## References
 
-Projetos que inspiraram a descoberta dos endpoints:
+Projects that helped discover the endpoints:
 [CodexBar](https://github.com/steipete/CodexBar),
 [Win-CodexBar](https://github.com/nesszer/Win-CodexBar),
 [Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor).
 
-## Créditos
+## Credits
 
-Logos do Claude e da OpenAI: [Simple Icons](https://simpleicons.org) (CC0).
-As marcas pertencem aos respectivos donos.
+Claude and OpenAI logos: [Simple Icons](https://simpleicons.org) (CC0).
+Trademarks belong to their respective owners.
 
-## Licença
+## License
 
 MIT

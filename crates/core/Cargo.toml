@@ -11,3 +11,4 @@ chrono.workspace = true
 ureq = { version = "2", features = ["json"] }
 dirs = "5"
 base64 = "0.22"
+sys-locale = "0.3"

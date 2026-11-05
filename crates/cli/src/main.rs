@@ -12,8 +12,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use ai_usage_core::hook_install::{self, Target};
+use ai_usage_core::i18n::{self, t, tf};
 use ai_usage_core::{list_sessions, Poller, ProviderStatus, ProviderUsage, SessionState};
-use chrono::{Local, Utc};
+use chrono::{Datelike, Local, Utc};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -43,7 +44,8 @@ fn run_usage(args: &[String]) {
     // the requests to the rate-limited usage endpoints.
     let mut poller = Poller::default();
     loop {
-        let usage = poller.poll();
+        let mut usage = poller.poll();
+        i18n::localize_usage(&mut usage);
         if json {
             println!("{}", serde_json::to_string(&usage).expect("serializable"));
         } else {
@@ -78,7 +80,7 @@ fn run_hooks(args: &[String]) -> ExitCode {
         .filter(|t| only.is_none_or(|p| p == t.provider))
         .collect();
     if targets.is_empty() {
-        eprintln!("provedor desconhecido: use claude ou codex");
+        eprintln!("{}", t("cli.unknown_provider"));
         return ExitCode::FAILURE;
     }
 
@@ -89,40 +91,52 @@ fn run_hooks(args: &[String]) -> ExitCode {
             "install" => {
                 let exe = current_exe();
                 if exe.components().any(|c| c.as_os_str() == "target") {
-                    eprintln!(
-                        "aviso: instalando hooks apontando para um binário de build ({}).\n       \
-                         Prefira `cargo install --path crates/cli` e rode o ai-usage instalado.",
-                        exe.display()
-                    );
+                    eprintln!("{}", tf("cli.build_warning", &[("path", &exe.display())]));
                 }
-                hook_install::install(target, &exe)
-                    .map(|_| format!("{}: hooks instalados em {path}", target.provider))
+                hook_install::install(target, &exe).map(|_| {
+                    tf(
+                        "cli.hooks_installed",
+                        &[("provider", &target.provider), ("path", &path)],
+                    )
+                })
             }
             "uninstall" => hook_install::uninstall(target).map(|removed| {
                 if removed {
-                    format!("{}: hooks removidos de {path}", target.provider)
+                    tf(
+                        "cli.hooks_removed",
+                        &[("provider", &target.provider), ("path", &path)],
+                    )
                 } else {
-                    format!("{}: nenhum hook do ai-usage em {path}", target.provider)
+                    tf(
+                        "cli.hooks_none",
+                        &[("provider", &target.provider), ("path", &path)],
+                    )
                 }
             }),
             "status" => Ok(format!(
                 "{}: {} ({path})",
                 target.provider,
                 if hook_install::is_installed(target) {
-                    "instalado"
+                    t("cli.installed")
                 } else {
-                    "não instalado"
+                    t("cli.not_installed")
                 }
             )),
             other => {
-                eprintln!("ação desconhecida: {other} (use install, uninstall ou status)");
+                eprintln!("{}", tf("cli.unknown_action", &[("action", &other)]));
                 return ExitCode::FAILURE;
             }
         };
         match result {
             Ok(msg) => println!("{msg}"),
             Err(e) => {
-                eprintln!("{}: erro: {e}", target.provider);
+                eprintln!(
+                    "{}",
+                    tf(
+                        "cli.provider_error",
+                        &[("provider", &target.provider), ("error", &e)]
+                    )
+                );
                 ok = false;
             }
         }
@@ -140,7 +154,8 @@ fn current_exe() -> PathBuf {
 }
 
 fn print_sessions(json: bool) {
-    let sessions = list_sessions();
+    let mut sessions = list_sessions();
+    i18n::localize_sessions(&mut sessions);
     if json {
         println!(
             "{}",
@@ -149,15 +164,15 @@ fn print_sessions(json: bool) {
         return;
     }
     if sessions.is_empty() {
-        println!("Nenhuma sessão ativa (os hooks estão instalados? `ai-usage hooks status`)");
+        println!("{}", t("cli.no_sessions"));
         return;
     }
     for s in &sessions {
         let state = match s.state {
-            SessionState::NeedsInput => "⚠ precisa de você",
-            SessionState::Done => "✓ concluída",
-            SessionState::Working => "… trabalhando",
-            SessionState::Idle => "· ociosa",
+            SessionState::NeedsInput => format!("⚠ {}", t("session.state.needs_input")),
+            SessionState::Done => format!("✓ {}", t("session.state.done")),
+            SessionState::Working => format!("… {}", t("session.state.working")),
+            SessionState::Idle => format!("· {}", t("session.state.idle")),
         };
         let since = format_duration((Utc::now() - s.updated_at).num_seconds());
         let detail = s
@@ -166,8 +181,10 @@ fn print_sessions(json: bool) {
             .map(|d| format!(" — {d}"))
             .unwrap_or_default();
         println!(
-            "{:<7} {:<20} {state} há {since}{detail}",
-            s.provider, s.project
+            "{:<7} {:<20} {state} {}{detail}",
+            s.provider,
+            s.project,
+            tf("cli.ago", &[("time", &since)])
         );
     }
 }
@@ -182,7 +199,13 @@ fn format_duration(secs: i64) -> String {
 }
 
 fn print_table(usage: &[ProviderUsage]) {
-    println!("Atualizado em {}\n", Local::now().format("%H:%M:%S"));
+    println!(
+        "{}\n",
+        tf(
+            "cli.updated_at",
+            &[("time", &Local::now().format("%H:%M:%S"))]
+        )
+    );
     for p in usage {
         let plan = p
             .plan
@@ -202,17 +225,18 @@ fn print_table(usage: &[ProviderUsage]) {
                     );
                 }
             }
-            ProviderStatus::NoCredentials => println!("  sem login (CLI não encontrada)"),
-            ProviderStatus::TokenExpired => {
-                println!("  token expirado — rode a CLI do provedor (ex.: `claude`, `codex`) para renovar")
-            }
+            ProviderStatus::NoCredentials => println!("  {}", t("cli.no_credentials")),
+            ProviderStatus::TokenExpired => println!("  {}", t("cli.token_expired")),
             ProviderStatus::RateLimited { retry_after_secs } => println!(
-                "  limite de consultas atingido (HTTP 429){}",
+                "  {}{}",
+                t("cli.rate_limited"),
                 retry_after_secs
-                    .map(|s| format!(" — tente em {} min", s.div_ceil(60)))
+                    .map(|s| tf("cli.retry_in", &[("n", &s.div_ceil(60))]))
                     .unwrap_or_default()
             ),
-            ProviderStatus::Error { message } => println!("  erro: {message}"),
+            ProviderStatus::Error { message } => {
+                println!("  {}", tf("cli.error", &[("message", message)]))
+            }
         }
         println!();
     }
@@ -235,8 +259,11 @@ fn format_reset(at: chrono::DateTime<Utc>) -> String {
     } else {
         format!("{h}h {m:02}m")
     };
-    format!(
-        "reinicia em {left} ({})",
-        at.with_timezone(&Local).format("%a %H:%M")
-    )
+    let local = at.with_timezone(&Local);
+    let when = format!(
+        "{} {}",
+        i18n::weekday(local.weekday().num_days_from_monday() as usize),
+        local.format("%H:%M")
+    );
+    tf("cli.resets", &[("left", &left), ("when", &when)])
 }

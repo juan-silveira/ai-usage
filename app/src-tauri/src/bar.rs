@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use ai_usage_core::{ProviderStatus, ProviderUsage, Session, SessionState, UsageWindow};
+use ai_usage_core::{i18n, ProviderStatus, ProviderUsage, Session, SessionState, UsageWindow};
 use chrono::{DateTime, Datelike, Local, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -195,12 +195,10 @@ fn peak_window(windows: &[UsageWindow]) -> Option<&UsageWindow> {
         .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
 }
 
-const WEEKDAYS: [&str; 7] = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
-
-/// "ter 23:00" in local time, with Portuguese weekday names.
+/// "Tue 23:00" in local time, with the weekday in the app's language.
 pub fn local_day_time(at: DateTime<Utc>) -> String {
     let local = at.with_timezone(&Local);
-    let day = WEEKDAYS[local.weekday().num_days_from_monday() as usize];
+    let day = i18n::weekday(local.weekday().num_days_from_monday() as usize);
     format!("{day} {}", local.format("%H:%M"))
 }
 
@@ -241,7 +239,7 @@ fn summary_tooltip(usage: &[ProviderUsage], waiting: usize) -> String {
         None => format!("{}: —", p.display_name),
     }));
     if waiting > 0 {
-        lines.push(format!("{waiting} sessão(ões) esperando você"));
+        lines.push(i18n::tf("bar.waiting", &[("n", &waiting)]));
     }
     lines.join("\n")
 }
@@ -255,6 +253,7 @@ mod tests {
     fn usage(provider: &str, session: f64, weekly: f64) -> ProviderUsage {
         let w = |key: &str, used| UsageWindow {
             key: key.into(),
+            days: None,
             label: key.into(),
             used_percent: used,
             resets_at: None,
@@ -279,6 +278,7 @@ mod tests {
             project: "p".into(),
             state: SessionState::NeedsInput,
             detail: None,
+            detail_kind: None,
             model: None,
             turn_started_at: None,
             last_turn_secs: None,
