@@ -91,8 +91,22 @@ cargo install tauri-cli --version '^2'    # uma vez
 cd app/src-tauri && cargo tauri build     # instaladores (.deb/.AppImage, .msi, .dmg)
 ```
 
-Clique esquerdo no ícone da bandeja mostra/oculta a janela; o botão direito
-abre o menu (atualizar agora, sair). Fechar a janela mantém o app na bandeja.
+Na barra do sistema aparece um item por provedor, como o applet de clima:
+logo + uso (ex.: `✳ 7/17%`). Nas preferências da janela dá para escolher o
+número (maior uso, sessão 5h, sessão/semanal ou só o ícone do app) e, por
+provedor, mostrar/ocultar o item, o logo e um nome personalizável.
+Quando uma sessão espera você, o item ganha `⚠1`.
+
+Clique esquerdo num item mostra/oculta a janela; o botão direito abre o
+menu (atualizar agora, sair). Fechar a janela mantém o app na bandeja.
+
+No Cinnamon (Linux Mint) o app usa o ícone nativo XApp (via libxapp), pois o
+`xapp-sn-watcher` descarta o texto de ícones AppIndicator. No macOS o texto
+aparece ao lado do ícone; no Windows a bandeja só exibe ícone e tooltip.
+
+Alertas sonoros (gerados pelo app, sem arquivos de áudio): um sino curto e
+insistente quando uma sessão precisa de você e um arpejo quando conclui.
+Cada um pode ser desligado e ouvido nas preferências.
 
 ## Roadmap
 
@@ -101,7 +115,8 @@ abre o menu (atualizar agora, sair). Fechar a janela mantém o app na bandeja.
 - [ ] Clicar na notificação foca o terminal da sessão
 - [ ] API local (HTTP/WebSocket) para widgets e displays externos
 - [ ] Mais provedores: Gemini CLI, Cursor, Copilot, OpenRouter
-- [ ] Ícone da bandeja com a porcentagem desenhada
+- [x] Uso na barra do sistema com logo do provedor e nome personalizável
+- [x] Alertas sonoros
 - [ ] Notificação ao passar de 80 % / 95 %
 - [ ] Iniciar com o sistema
 - [ ] CI com builds para os três SOs
@@ -112,6 +127,11 @@ Projetos que inspiraram a descoberta dos endpoints:
 [CodexBar](https://github.com/steipete/CodexBar),
 [Win-CodexBar](https://github.com/nesszer/Win-CodexBar),
 [Claude-Code-Usage-Monitor](https://github.com/CodeZeno/Claude-Code-Usage-Monitor).
+
+## Créditos
+
+Logos do Claude e da OpenAI: [Simple Icons](https://simpleicons.org) (CC0).
+As marcas pertencem aos respectivos donos.
 
 ## Licença
 

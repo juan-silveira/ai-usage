@@ -190,6 +190,8 @@ listen("sessions-updated", (event) => {
 listen("usage-updated", (event) => {
   latest = event.payload;
   render();
+  // Don't rebuild the form under the user's cursor while they type a name.
+  if (!document.getElementById("provider-bar").contains(document.activeElement)) renderProviderBar();
 });
 
 document.getElementById("refresh").addEventListener("click", () => invoke("refresh_now"));
@@ -212,7 +214,88 @@ document.querySelectorAll("[data-preview]").forEach((btn) =>
   btn.addEventListener("click", () => invoke("preview_sound", { sound: btn.dataset.preview }))
 );
 
+const PROVIDER_ICON = { claude: "icons/claude.png", codex: "icons/codex.png" };
+let barSettings = null;
+
+/** Mirrors bar.rs so the preview matches what the panel will show. */
+function barPreview(id, cfg) {
+  const usage = latest.find((p) => p.provider === id);
+  let value = "—";
+  if (usage?.status === "ok") {
+    const pct = (k) => usage.windows.find((w) => w.key === k)?.used_percent;
+    const peak = Math.max(...usage.windows.map((w) => w.used_percent));
+    const f = barSettings.bar_format;
+    if (f === "session") value = `${Math.round(pct("session") ?? peak)}%`;
+    else if (f === "session_weekly" && pct("session") != null && pct("weekly") != null)
+      value = `${Math.round(pct("session"))}/${Math.round(pct("weekly"))}%`;
+    else value = `${Math.round(peak)}%`;
+  }
+  const icon = cfg.show_icon ? PROVIDER_ICON[id] : null;
+  const name = cfg.name.trim() || barSettings.default_names[id];
+  const text = cfg.show_name || (cfg.show_icon && !icon) ? `${name} ${value}` : value;
+  return `<span class="preview">${icon ? `<img src="${icon}" alt="" />` : ""}${escapeHtml(text)}</span>`;
+}
+
+function renderProviderBar() {
+  if (!barSettings) return;
+  const off = barSettings.bar_format === "off";
+  document.getElementById("provider-bar").innerHTML = Object.entries(barSettings.providers)
+    .map(([id, cfg]) => {
+      const usage = latest.find((p) => p.provider === id);
+      const label = usage?.display_name ?? PROVIDER_NAME[id] ?? id;
+      const icon = PROVIDER_ICON[id];
+      const dim = off || !cfg.show ? " disabled" : "";
+      return `
+      <div class="pbar" data-provider="${escapeHtml(id)}">
+        <div class="head">
+          <label class="who">
+            <input type="checkbox" data-field="show" ${cfg.show ? "checked" : ""} ${off ? "disabled" : ""} />
+            ${icon ? `<img src="${icon}" alt="" />` : ""}${escapeHtml(label)}
+          </label>
+          ${off || !cfg.show ? "" : barPreview(id, cfg)}
+        </div>
+        <div class="opts${dim}">
+          <label><input type="checkbox" data-field="show_icon" ${cfg.show_icon ? "checked" : ""} /> Ícone</label>
+          <label><input type="checkbox" data-field="show_name" ${cfg.show_name ? "checked" : ""} /> Nome</label>
+          <input type="text" data-field="name" maxlength="16" value="${escapeHtml(cfg.name)}"
+            placeholder="${escapeHtml(barSettings.default_names[id] ?? "")}" ${cfg.show_name ? "" : "disabled"} />
+        </div>
+      </div>`;
+    })
+    .join("");
+}
+
+function saveProviderBar(id) {
+  invoke("set_provider_bar", { provider: id, config: barSettings.providers[id] });
+}
+
+const providerBar = document.getElementById("provider-bar");
+providerBar.addEventListener("change", (e) => {
+  const row = e.target.closest(".pbar");
+  const field = e.target.dataset.field;
+  if (!row || !field) return;
+  const cfg = barSettings.providers[row.dataset.provider];
+  cfg[field] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  saveProviderBar(row.dataset.provider);
+  renderProviderBar();
+});
+// Live preview while typing; saved on change (blur / Enter).
+providerBar.addEventListener("input", (e) => {
+  const row = e.target.closest(".pbar");
+  if (!row || e.target.dataset.field !== "name") return;
+  barSettings.providers[row.dataset.provider].name = e.target.value;
+  const preview = row.querySelector(".preview");
+  if (preview) preview.outerHTML = barPreview(row.dataset.provider, barSettings.providers[row.dataset.provider]);
+});
+
+barFormat.addEventListener("change", () => {
+  if (barSettings) barSettings.bar_format = barFormat.value;
+  renderProviderBar();
+});
+
 invoke("get_settings").then((settings) => {
+  barSettings = settings;
+  renderProviderBar();
   barFormat.value = settings.bar_format;
   soundToggles.needs_input.checked = settings.sound_needs_input;
   soundToggles.done.checked = settings.sound_done;
@@ -226,4 +309,5 @@ invoke("get_sessions").then((list) => {
 invoke("get_usage").then((usage) => {
   latest = usage;
   render();
+  renderProviderBar();
 });

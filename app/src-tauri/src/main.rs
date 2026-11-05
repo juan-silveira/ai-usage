@@ -2,49 +2,40 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod alerts;
+mod bar;
 mod sound;
 #[cfg(target_os = "linux")]
 mod xapp_tray;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use ia_usage_core::{
-    fetch_all, list_sessions, ProviderStatus, ProviderUsage, Session, SessionState,
-};
+use ia_usage_core::{fetch_all, list_sessions, ProviderUsage, Session};
 use serde::{Deserialize, Serialize};
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 
 use alerts::{AlertKind, AlertTracker};
+use bar::{BarFormat, BarItem, ProviderBar};
 use sound::Sound;
 
 const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// Session files are tiny and local, so they can be scanned often.
 const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(2);
-const TRAY_ID: &str = "main";
-
-/// What the panel text next to the tray icon shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum BarFormat {
-    Off,
-    /// Highest usage among the provider's windows.
-    #[default]
-    Peak,
-    /// The 5-hour session window.
-    Session,
-    /// Session and weekly, e.g. "CL 5/17%".
-    SessionWeekly,
-}
+const TRAY_PREFIX: &str = "bar-";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Settings {
     #[serde(default)]
     bar_format: BarFormat,
+    /// Panel options per provider id; missing entries use the defaults.
+    #[serde(default)]
+    providers: BTreeMap<String, ProviderBar>,
     #[serde(default = "enabled")]
     sound_needs_input: bool,
     #[serde(default = "enabled")]
@@ -59,6 +50,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             bar_format: BarFormat::default(),
+            providers: BTreeMap::new(),
             sound_needs_input: true,
             sound_done: true,
         }
@@ -96,6 +88,17 @@ struct Snapshot {
     sessions: Mutex<Vec<Session>>,
     alerts: Mutex<AlertTracker>,
     settings: Mutex<Settings>,
+    /// Tray icons currently shown by the Tauri backend: id -> icon bytes ptr.
+    tray_icons: Mutex<Vec<(String, Option<usize>)>>,
+    menu: Mutex<Option<Menu<tauri::Wry>>>,
+}
+
+/// Settings as the window sees them: every known provider is filled in.
+#[derive(Serialize)]
+struct SettingsView {
+    #[serde(flatten)]
+    settings: Settings,
+    default_names: BTreeMap<String, String>,
 }
 
 #[tauri::command]
@@ -114,8 +117,42 @@ fn acknowledge_session(state: State<Snapshot>, key: String) {
 }
 
 #[tauri::command]
-fn get_settings(state: State<Snapshot>) -> Settings {
-    state.settings.lock().unwrap().clone()
+fn get_settings(state: State<Snapshot>) -> SettingsView {
+    let mut settings = state.settings.lock().unwrap().clone();
+    let mut default_names = BTreeMap::new();
+    let mut ids: Vec<String> = vec!["claude".into(), "codex".into()];
+    ids.extend(
+        state
+            .usage
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| p.provider.clone()),
+    );
+    for id in ids {
+        settings.providers.entry(id.clone()).or_default();
+        default_names.insert(id.clone(), bar::default_name(&id));
+    }
+    SettingsView {
+        settings,
+        default_names,
+    }
+}
+
+#[tauri::command]
+fn set_provider_bar(
+    app: AppHandle,
+    state: State<Snapshot>,
+    provider: String,
+    config: ProviderBar,
+) -> Result<(), String> {
+    let settings = {
+        let mut s = state.settings.lock().unwrap();
+        s.providers.insert(provider, config);
+        s.clone()
+    };
+    update_tray(&app);
+    settings.save(&app).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -209,87 +246,80 @@ fn poll_sessions(app: &AppHandle) {
 
 fn update_tray(app: &AppHandle) {
     let snapshot = app.state::<Snapshot>();
-    let usage = snapshot.usage.lock().unwrap().clone();
-    let format = snapshot.settings.lock().unwrap().bar_format;
-    let waiting = snapshot
-        .sessions
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|s| s.state == SessionState::NeedsInput)
-        .count();
-
-    let mut title = bar_text(&usage, format);
-    let mut tip = tooltip(&usage);
-    if waiting > 0 {
-        if format != BarFormat::Off {
-            title = format!("⚠{waiting} {title}").trim_end().to_string();
+    let items = {
+        let usage = snapshot.usage.lock().unwrap();
+        let sessions = snapshot.sessions.lock().unwrap();
+        let settings = snapshot.settings.lock().unwrap();
+        bar::items(&usage, &sessions, settings.bar_format, &settings.providers)
+    };
+    // Tray icons are created and changed on the UI thread on every platform.
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "linux")]
+        if xapp_tray::sync(&items) {
+            return;
         }
-        tip = format!("{tip}\n{waiting} sessão(ões) esperando você");
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let (title, tip) = (title.clone(), tip.clone());
-        let _ = app.run_on_main_thread(move || {
-            xapp_tray::update(&title, &tip);
-        });
-    }
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(tip));
-        // Shown next to the icon on macOS and on Linux AppIndicator panels.
-        let _ = tray.set_title(Some(title));
-    }
+        sync_tauri_tray(&handle, &items);
+    });
 }
 
-fn short_name(provider: &str) -> String {
-    match provider {
-        "claude" => "CL".into(),
-        "codex" => "CX".into(),
-        other => other.chars().take(2).collect::<String>().to_uppercase(),
-    }
+fn icon_image(bytes: Option<&'static [u8]>) -> Image<'static> {
+    // A provider shown without its logo still needs some icon: use a
+    // transparent pixel so only the text (macOS title) remains.
+    bytes
+        .and_then(|b| Image::from_bytes(b).ok())
+        .unwrap_or_else(|| Image::new_owned(vec![0; 4], 1, 1))
 }
 
-fn bar_text(usage: &[ProviderUsage], format: BarFormat) -> String {
-    if format == BarFormat::Off {
-        return String::new();
-    }
-    usage
-        .iter()
-        .filter_map(|p| {
-            let ProviderStatus::Ok { windows } = &p.status else {
-                return None;
-            };
-            let pct = |key: &str| {
-                windows
-                    .iter()
-                    .find(|w| w.key == key)
-                    .map(|w| w.used_percent.round())
-            };
-            let peak = p.peak_percent()?.round();
-            let value = match format {
-                BarFormat::Session => format!("{:.0}%", pct("session").unwrap_or(peak)),
-                BarFormat::SessionWeekly => match (pct("session"), pct("weekly")) {
-                    (Some(s), Some(w)) => format!("{s:.0}/{w:.0}%"),
-                    _ => format!("{peak:.0}%"),
-                },
-                _ => format!("{peak:.0}%"),
-            };
-            Some(format!("{} {value}", short_name(&p.provider)))
-        })
-        .collect::<Vec<_>>()
-        .join("  ")
-}
+fn sync_tauri_tray(app: &AppHandle, items: &[BarItem]) {
+    let snapshot = app.state::<Snapshot>();
+    let mut shown = snapshot.tray_icons.lock().unwrap();
+    let key = |item: &BarItem| item.icon.map(|b| b.as_ptr() as usize);
 
-fn tooltip(usage: &[ProviderUsage]) -> String {
-    let lines: Vec<String> = usage
-        .iter()
-        .map(|p| match p.peak_percent() {
-            Some(pct) => format!("{}: {pct:.0}%", p.display_name),
-            None => format!("{}: —", p.display_name),
-        })
-        .collect();
-    format!("IA Usage\n{}", lines.join("\n"))
+    let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+    if ids != shown.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>() {
+        for (id, _) in shown.drain(..) {
+            app.remove_tray_by_id(&format!("{TRAY_PREFIX}{id}"));
+        }
+        let menu = snapshot.menu.lock().unwrap().clone();
+        for item in items {
+            let mut builder = TrayIconBuilder::with_id(format!("{TRAY_PREFIX}{}", item.id))
+                .icon(icon_image(item.icon))
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_window(tray.app_handle());
+                    }
+                });
+            if let Some(menu) = &menu {
+                builder = builder.menu(menu);
+            }
+            if builder.build(app).is_ok() {
+                shown.push((item.id.clone(), key(item)));
+            }
+        }
+    }
+
+    for item in items {
+        let Some(tray) = app.tray_by_id(&format!("{TRAY_PREFIX}{}", item.id)) else {
+            continue;
+        };
+        if let Some(entry) = shown.iter_mut().find(|(id, _)| *id == item.id) {
+            if entry.1 != key(item) {
+                let _ = tray.set_icon(Some(icon_image(item.icon)));
+                entry.1 = key(item);
+            }
+        }
+        let _ = tray.set_tooltip(Some(&item.tooltip));
+        // Shown next to the icon on macOS and on Linux AppIndicator panels;
+        // Windows trays only have the icon and tooltip.
+        let _ = tray.set_title(Some(&item.label));
+    }
 }
 
 fn toggle_window(app: &AppHandle) {
@@ -303,35 +333,11 @@ fn toggle_window(app: &AppHandle) {
     }
 }
 
-fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
+fn build_menu(app: &mut tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "show", "Mostrar / ocultar", true, None::<&str>)?;
     let refresh = MenuItem::with_id(app, "refresh", "Atualizar agora", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &refresh, &quit])?;
-
-    TrayIconBuilder::with_id(TRAY_ID)
-        .icon(app.default_window_icon().unwrap().clone())
-        .tooltip("IA Usage")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => toggle_window(app),
-            "refresh" => refresh_now(app.clone()),
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                toggle_window(tray.app_handle());
-            }
-        })
-        .build(app)?;
-    Ok(())
+    Menu::with_items(app, &[&show, &refresh, &quit])
 }
 
 fn main() {
@@ -344,6 +350,7 @@ fn main() {
             acknowledge_session,
             get_settings,
             set_bar_format,
+            set_provider_bar,
             set_sound_enabled,
             preview_sound,
             refresh_now
@@ -354,7 +361,6 @@ fn main() {
             #[cfg(target_os = "linux")]
             let native_tray = xapp_tray::try_init(
                 app.handle(),
-                include_bytes!("../icons/128x128.png"),
                 xapp_tray::Actions {
                     toggle: toggle_window,
                     refresh: |app| refresh_now(app.clone()),
@@ -363,8 +369,17 @@ fn main() {
             #[cfg(not(target_os = "linux"))]
             let native_tray = false;
             if !native_tray {
-                build_tray(app)?;
+                let menu = build_menu(app)?;
+                *app.state::<Snapshot>().menu.lock().unwrap() = Some(menu);
             }
+            // Menu events from any tray icon built by the Tauri backend.
+            app.on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => toggle_window(app),
+                "refresh" => refresh_now(app.clone()),
+                "quit" => app.exit(0),
+                _ => {}
+            });
+            update_tray(app.handle());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
