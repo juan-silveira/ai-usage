@@ -3,7 +3,9 @@
 
 use std::path::PathBuf;
 
-use chrono::DateTime;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use super::{http_agent, status_from_http_error, Provider};
@@ -35,6 +37,9 @@ impl Provider for Codex {
         let Some(creds) = load_credentials() else {
             return (None, ProviderStatus::NoCredentials);
         };
+        if jwt_expiry(&creds.access_token).is_some_and(|exp| exp <= Utc::now().timestamp()) {
+            return (None, ProviderStatus::TokenExpired);
+        }
 
         let mut req = http_agent()
             .get(USAGE_URL)
@@ -92,6 +97,14 @@ fn parse_credentials(raw: &str) -> Option<Credentials> {
             .filter(|s| !s.is_empty())
             .map(str::to_string),
     })
+}
+
+/// Reads the `exp` claim (unix seconds) from the access token, a JWT. The
+/// signature is not checked; this only avoids a request that would 401.
+fn jwt_expiry(token: &str) -> Option<i64> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+    serde_json::from_slice::<Value>(&bytes).ok()?.get("exp")?.as_i64()
 }
 
 fn parse_usage(body: &Value) -> ProviderStatus {
@@ -170,6 +183,13 @@ mod tests {
         };
         assert_eq!(windows[0].key, "session");
         assert_eq!(windows[1].key, "weekly");
+    }
+
+    #[test]
+    fn reads_jwt_expiry() {
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"exp":1749476472}"#);
+        assert_eq!(jwt_expiry(&format!("h.{payload}.sig")), Some(1749476472));
+        assert_eq!(jwt_expiry("not-a-jwt"), None);
     }
 
     #[test]

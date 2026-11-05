@@ -5,7 +5,7 @@ let latest = [];
 
 const STATUS_TEXT = {
   no_credentials: "Sem login — instale e entre na CLI deste provedor.",
-  token_expired: "Token expirado — abra a CLI do provedor para renovar.",
+  token_expired: "Token expirado — rode a CLI do provedor (claude, codex) para renovar.",
 };
 
 function escapeHtml(s) {

@@ -53,7 +53,7 @@ fn print_table(usage: &[ProviderUsage]) {
             }
             ProviderStatus::NoCredentials => println!("  sem login (CLI não encontrada)"),
             ProviderStatus::TokenExpired => {
-                println!("  token expirado — abra a CLI do provedor para renovar")
+                println!("  token expirado — rode a CLI do provedor (ex.: `claude`, `codex`) para renovar")
             }
             ProviderStatus::Error { message } => println!("  erro: {message}"),
         }
