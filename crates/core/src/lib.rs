@@ -1,0 +1,16 @@
+//! Fetches subscription usage limits for AI coding tools (Claude Code, Codex, …)
+//! by reusing the credentials their CLIs already store on disk.
+//!
+//! Tokens are only ever read, never refreshed or rewritten: the CLIs rotate
+//! refresh tokens, so refreshing here could log the user out of the CLI.
+
+pub mod model;
+pub mod providers;
+
+pub use model::{ProviderStatus, ProviderUsage, UsageWindow};
+pub use providers::{all_providers, Provider};
+
+/// Polls every registered provider sequentially.
+pub fn fetch_all() -> Vec<ProviderUsage> {
+    all_providers().iter().map(|p| p.fetch()).collect()
+}

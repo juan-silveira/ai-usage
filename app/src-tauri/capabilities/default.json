@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: listen to usage events and call app commands",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
