@@ -22,8 +22,10 @@ use crate::providers::{all_providers, Provider};
 const MIN_BACKOFF_SECS: i64 = 60;
 const DEFAULT_BACKOFF_SECS: i64 = 5 * 60;
 const MAX_BACKOFF_SECS: i64 = 30 * 60;
-/// A good result younger than this is reused instead of fetching again.
-const MIN_FETCH_INTERVAL_SECS: i64 = 50;
+/// A good result younger than this (just under a minute) is reused instead
+/// of fetching again — covers app restarts and the CLI running alongside,
+/// while a 1-minute schedule still gets a fresh result every tick.
+const MIN_FETCH_INTERVAL_SECS: i64 = 55;
 
 #[derive(Default, Serialize, Deserialize)]
 struct ProviderState {
@@ -156,6 +158,12 @@ fn apply(state: &mut ProviderState, result: ProviderUsage, now: DateTime<Utc>) -
         }
         ProviderStatus::RateLimited { retry_after_secs } => {
             state.rate_limited += 1;
+            eprintln!(
+                "ia-usage: {} usage endpoint returned 429 (Retry-After: {}), attempt {}",
+                result.provider,
+                retry_after_secs.map_or("none".to_string(), |s| format!("{s}s")),
+                state.rate_limited
+            );
             let backoff = DEFAULT_BACKOFF_SECS
                 .saturating_mul(1 << (state.rate_limited - 1).min(4))
                 .min(MAX_BACKOFF_SECS);

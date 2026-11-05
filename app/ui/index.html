@@ -24,6 +24,20 @@
     <footer id="updated" class="muted"></footer>
     </div>
     <div id="view-settings" hidden>
+    <h2 class="section">Consulta de limites</h2>
+    <section class="card prefs">
+      <label class="pref">
+        <span>Atualizar a cada</span>
+        <select id="poll-minutes">
+          <option value="1">1 min</option>
+          <option value="2">2 min</option>
+          <option value="5">5 min (recomendado)</option>
+          <option value="10">10 min</option>
+          <option value="15">15 min</option>
+        </select>
+      </label>
+      <p class="muted">Os provedores limitam as consultas de uso: com 1 min o Claude costuma responder “limite atingido” (HTTP 429). As sessões são em tempo real, independente disso.</p>
+    </section>
     <h2 class="section">Barra do sistema</h2>
     <section class="card prefs">
       <label class="pref">

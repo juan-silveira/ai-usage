@@ -31,7 +31,6 @@ use updates::UpdateInfo;
 use usage_alerts::ThresholdTracker;
 use widget::WidgetSettings;
 
-const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// Session files are tiny and local, so they can be scanned often.
 const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const TRAY_PREFIX: &str = "bar-";
@@ -61,11 +60,19 @@ struct Settings {
     sound_threshold: bool,
     #[serde(default)]
     widget: WidgetSettings,
+    /// Minutes between usage polls. The usage endpoints rate-limit
+    /// aggressively; 1 minute triggers HTTP 429 on Claude.
+    #[serde(default = "default_poll_minutes")]
+    poll_minutes: u64,
     #[serde(default = "enabled")]
     check_updates: bool,
     /// Last version announced, so each release notifies only once.
     #[serde(default)]
     update_notified: Option<String>,
+}
+
+fn default_poll_minutes() -> u64 {
+    5
 }
 
 fn default_thresholds() -> Vec<u8> {
@@ -88,6 +95,7 @@ impl Default for Settings {
             sound_done: true,
             sound_threshold: true,
             widget: WidgetSettings::default(),
+            poll_minutes: default_poll_minutes(),
             check_updates: true,
             update_notified: None,
         }
@@ -375,6 +383,11 @@ fn get_update(state: State<Snapshot>) -> UpdateStatus {
 }
 
 #[tauri::command]
+fn set_poll_minutes(app: AppHandle, minutes: u64) -> Result<(), String> {
+    change_settings(&app, |s| s.poll_minutes = minutes.clamp(1, 60)).map(|_| ())
+}
+
+#[tauri::command]
 fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
     change_settings(&app, |s| s.check_updates = enabled).map(|_| ())
 }
@@ -592,6 +605,7 @@ fn main() {
             check_updates_now,
             get_update,
             set_check_updates,
+            set_poll_minutes,
             open_update,
             set_sound_enabled,
             preview_sound,
@@ -636,7 +650,21 @@ fn main() {
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 poll_usage(&handle);
-                std::thread::sleep(USAGE_POLL_INTERVAL);
+                // Re-read the interval while waiting so a change in the
+                // preferences applies without waiting out the old one.
+                let started = Instant::now();
+                loop {
+                    std::thread::sleep(Duration::from_secs(5));
+                    let minutes = handle
+                        .state::<Snapshot>()
+                        .settings
+                        .lock()
+                        .unwrap()
+                        .poll_minutes;
+                    if started.elapsed() >= Duration::from_secs(minutes * 60) {
+                        break;
+                    }
+                }
             });
             let handle = app.handle().clone();
             std::thread::spawn(move || {

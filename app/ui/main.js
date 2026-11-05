@@ -84,7 +84,7 @@ function renderLimits() {
   const fresh = latest.filter((p) => !p.stale).map((p) => new Date(p.fetched_at));
   const at = fresh.length ? new Date(Math.max(...fresh)) : new Date(latest[0].fetched_at);
   document.getElementById("updated").textContent =
-    `Atualizado às ${at.toLocaleTimeString()} · a cada 60 s`;
+    `Atualizado às ${at.toLocaleTimeString()} · a cada ${pollEvery} min`;
 }
 
 function peakPercent(p) {
@@ -374,6 +374,14 @@ document.getElementById("check-now").addEventListener("click", async () => {
   updateStatus.textContent = "Verificando…";
   showUpdate(await invoke("check_updates_now"));
 });
+const pollMinutes = document.getElementById("poll-minutes");
+let pollEvery = 5;
+pollMinutes.addEventListener("change", () => {
+  pollEvery = Number(pollMinutes.value);
+  invoke("set_poll_minutes", { minutes: pollEvery });
+  render();
+});
+
 const checkUpdates = document.getElementById("check-updates");
 checkUpdates.addEventListener("change", () => invoke("set_check_updates", { enabled: checkUpdates.checked }));
 listen("update-status", (e) => showUpdate({ current: "", update: e.payload, error: null }));
@@ -412,6 +420,8 @@ invoke("get_settings").then((settings) => {
   levels = { session: settings.alert_session, weekly: settings.alert_weekly };
   levelInputs.forEach((input) => (input.value = levels[input.dataset.window].join(", ")));
   checkUpdates.checked = settings.check_updates;
+  pollEvery = settings.poll_minutes;
+  pollMinutes.value = String(pollEvery);
   soundToggles.threshold.checked = settings.sound_threshold;
   render();
   renderProviderBar();
