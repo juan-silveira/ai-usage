@@ -33,6 +33,23 @@ Ambos os endpoints são internos/não documentados e podem mudar.
 Para adicionar um provedor, implemente o trait `Provider` em
 `crates/core/src/providers/` e registre-o em `all_providers()`.
 
+## Conexões
+
+Na aba ⚙ → Conexões, cada provedor mostra o status (conectado + plano, login
+expirado, não conectado) e um botão **Conectar/Reconectar** que roda o login
+oficial da CLI (`claude auth login`, `codex login`) — ele abre o navegador; se
+não abrir, o app mostra o link, e há um campo para colar o código caso a CLI
+peça. Sem a CLI instalada, mostra o comando de instalação. O app encontra as
+CLIs mesmo fora do PATH do desktop (asdf, nvm, volta, npm global).
+
+O interruptor **Sessões ao vivo** instala/remove os hooks. Eles chamam o
+próprio executável do app (`ia-usage-app hook claude`), então não é preciso
+instalar a CLI `ia-usage` separadamente.
+
+O app inicia com o sistema (ligado por padrão na primeira execução, direto
+na barra, sem abrir a janela) e tem tema claro/escuro/seguir o sistema para a
+janela e o widget.
+
 ## Sessões e alertas
 
 O comando `ia-usage hook <claude|codex>` é registrado como hook dos agentes.
@@ -138,7 +155,9 @@ Cada um pode ser desligado e ouvido nas preferências.
 - [x] Widget flutuante transparente e com clique atravessando
 - [x] Aviso de nova versão (GitHub Releases)
 - [ ] Instalação automática de atualizações (tauri-plugin-updater + releases assinadas no CI)
-- [ ] Iniciar com o sistema
+- [x] Iniciar com o sistema
+- [x] Botão de conectar (login pela CLI oficial) e hooks pelo app
+- [x] Tema claro/escuro
 - [ ] CI com builds para os três SOs
 
 ## Referências

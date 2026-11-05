@@ -72,6 +72,8 @@ function fit() {
 function applySettings(s) {
   levels = { session: s.alert_session, weekly: s.alert_weekly };
   document.documentElement.style.setProperty("--bg-alpha", s.widget.opacity);
+  if (s.theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = s.theme;
   render();
 }
 

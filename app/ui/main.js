@@ -440,3 +440,168 @@ invoke("get_usage").then((usage) => {
   render();
   renderProviderBar();
 });
+
+// ---------- Theme ----------
+const themeSelect = document.getElementById("theme");
+function applyTheme(theme) {
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+}
+themeSelect.addEventListener("change", () => {
+  applyTheme(themeSelect.value);
+  invoke("set_theme", { theme: themeSelect.value });
+});
+invoke("get_settings").then((s) => {
+  themeSelect.value = s.theme;
+  applyTheme(s.theme);
+});
+
+// ---------- Connections ----------
+let connections = [];
+const loginState = {}; // provider -> { url, line, result }
+
+function connStatus(id) {
+  const p = latest.find((x) => x.provider === id);
+  if (!p) return { text: "Verificando…", cls: "" };
+  switch (p.status) {
+    case "ok":
+      return { text: `Conectado${p.plan ? ` · plano ${p.plan}` : ""}`, cls: "ok" };
+    case "token_expired":
+      return { text: "Login expirado — reconecte", cls: "bad" };
+    case "no_credentials":
+      return { text: "Não conectado", cls: "bad" };
+    case "rate_limited":
+      return { text: "Conectado · consultas limitadas no momento", cls: "ok" };
+    default:
+      return { text: "Erro ao consultar", cls: "bad" };
+  }
+}
+
+function renderConnections() {
+  const root = document.getElementById("connections");
+  if (!connections.length) return;
+  if (root.contains(document.activeElement) && document.activeElement.tagName === "INPUT"
+      && document.activeElement.type === "text") return; // don't wipe a code being typed
+  root.innerHTML = connections
+    .map((c) => {
+      const st = connStatus(c.provider);
+      const icon = PROVIDER_ICON[c.provider];
+      const login = loginState[c.provider] ?? {};
+      const connected = st.cls === "ok";
+      let action;
+      if (!c.cli_path) {
+        action = `<span class="state bad">CLI não encontrada</span>`;
+      } else if (c.login_running) {
+        action = `<button class="text" data-act="cancel">Cancelar</button>`;
+      } else {
+        const expired = latest.find((x) => x.provider === c.provider)?.status === "token_expired";
+        action = `<button class="text" data-act="login">${connected || expired ? "Reconectar" : "Conectar"}</button>`;
+      }
+      const loginBox = c.login_running
+        ? `<div class="login">
+            <span>Conclua o login no navegador que abriu.</span>
+            ${login.url ? `<span>Se ele não abriu: <a href="#" data-act="open-url">abrir link de login</a></span>` : ""}
+            <div class="row">
+              <input type="text" data-field="code" placeholder="Código, se a CLI pedir" />
+              <button class="text" data-act="send-code">Enviar</button>
+            </div>
+            ${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}
+          </div>`
+        : login.result === false
+          ? `<div class="login"><span>O login não foi concluído.</span>${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}</div>`
+          : "";
+      const install = c.cli_path
+        ? ""
+        : `<div class="row"><code>${escapeHtml(c.install_command)}</code>
+             <button class="text" data-act="copy">Copiar</button></div>`;
+      return `
+      <div class="conn" data-provider="${escapeHtml(c.provider)}">
+        <div class="head">
+          <div class="who">
+            ${icon ? `<img src="${icon}" alt="" />` : ""}
+            <div><div class="name">${escapeHtml(c.name)}</div>
+            <div class="state ${st.cls}">${escapeHtml(st.text)}</div></div>
+          </div>
+          ${action}
+        </div>
+        ${loginBox}${install}
+        <label class="pref"><span><input type="checkbox" data-act="hooks" ${c.hooks_installed ? "checked" : ""} ${c.cli_path ? "" : "disabled"} />
+          Sessões ao vivo (alertas de “precisa de você” e “concluiu”)</span></label>
+      </div>`;
+    })
+    .join("");
+}
+
+async function loadConnections() {
+  connections = await invoke("get_connections");
+  renderConnections();
+}
+
+document.getElementById("connections").addEventListener("click", async (e) => {
+  const act = e.target.dataset.act;
+  const row = e.target.closest(".conn");
+  if (!act || !row || act === "hooks") return;
+  const provider = row.dataset.provider;
+  const conn = connections.find((c) => c.provider === provider);
+  if (act === "login") {
+    loginState[provider] = {};
+    try {
+      await invoke("start_login", { provider });
+    } catch (err) {
+      loginState[provider] = { result: false, line: String(err) };
+    }
+    await loadConnections();
+  } else if (act === "cancel") {
+    await invoke("cancel_login", { provider });
+    await loadConnections();
+  } else if (act === "send-code") {
+    const input = row.querySelector('[data-field="code"]');
+    if (input.value.trim()) await invoke("send_login_code", { provider, code: input.value });
+    input.value = "";
+  } else if (act === "open-url") {
+    e.preventDefault();
+    invoke("open_url", { url: loginState[provider]?.url });
+  } else if (act === "copy") {
+    navigator.clipboard?.writeText(conn.install_command);
+    e.target.textContent = "Copiado";
+  }
+});
+
+document.getElementById("connections").addEventListener("change", async (e) => {
+  if (e.target.dataset.act !== "hooks") return;
+  const provider = e.target.closest(".conn").dataset.provider;
+  try {
+    await invoke("set_hooks", { provider, enabled: e.target.checked });
+  } catch (err) {
+    alert(`Não foi possível alterar os hooks: ${err}`);
+  }
+  await loadConnections();
+});
+
+listen("login-event", (e) => {
+  const { provider, line, url, finished } = e.payload;
+  const st = (loginState[provider] ??= {});
+  if (line) st.line = line;
+  if (url) st.url = url;
+  if (finished != null) {
+    st.result = finished;
+    loadConnections();
+  } else {
+    renderConnections();
+  }
+});
+
+listen("usage-updated", () => renderConnections());
+loadConnections();
+
+// ---------- Autostart ----------
+const autostart = document.getElementById("autostart");
+invoke("get_autostart").then((on) => (autostart.checked = on));
+autostart.addEventListener("change", async () => {
+  try {
+    await invoke("set_autostart", { enabled: autostart.checked });
+  } catch (err) {
+    autostart.checked = !autostart.checked;
+    alert(`Não foi possível alterar: ${err}`);
+  }
+});

@@ -108,7 +108,7 @@ fn run_hooks(args: &[String]) -> ExitCode {
             "status" => Ok(format!(
                 "{}: {} ({path})",
                 target.provider,
-                if hooks_installed(target) {
+                if hook_install::is_installed(target) {
                     "instalado"
                 } else {
                     "não instalado"
@@ -137,12 +137,6 @@ fn run_hooks(args: &[String]) -> ExitCode {
 fn current_exe() -> PathBuf {
     let exe = std::env::current_exe().expect("current executable path");
     exe.canonicalize().unwrap_or(exe)
-}
-
-fn hooks_installed(target: &Target) -> bool {
-    std::fs::read_to_string(&target.config_path).is_ok_and(|text| {
-        text.contains(&format!(" hook {}\"", target.provider)) && text.contains("ia-usage")
-    })
 }
 
 fn print_sessions(json: bool) {

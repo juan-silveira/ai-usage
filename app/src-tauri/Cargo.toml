@@ -14,6 +14,7 @@ chrono.workspace = true
 tauri-plugin-notification = "2"
 serde.workspace = true
 tauri-plugin-opener = "2"
+tauri-plugin-autostart = "2"
 ureq = { version = "2", features = ["json"] }
 rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
 

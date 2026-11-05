@@ -27,6 +27,7 @@ type NewFn = unsafe extern "C" fn() -> *mut c_void;
 type SetStrFn = unsafe extern "C" fn(*mut c_void, *const c_char);
 type SetMenuFn = unsafe extern "C" fn(*mut c_void, *mut c_void);
 type AnyMonitorsFn = unsafe extern "C" fn() -> c_int;
+type SetBoolFn = unsafe extern "C" fn(*mut c_void, c_int);
 
 pub struct Actions {
     pub toggle: fn(&AppHandle),
@@ -42,10 +43,13 @@ struct Api {
     set_label: SetStrFn,
     set_tooltip: SetStrFn,
     set_secondary_menu: SetMenuFn,
+    set_visible: SetBoolFn,
 }
 
+/// A panel slot. Slots are never destroyed: libxapp registers icons on D-Bus
+/// asynchronously and crashes if an icon is finalized before that completes,
+/// so unused slots are hidden and reused instead.
 struct Icon {
-    // Dropping the object unregisters the icon from the panel.
     obj: glib::Object,
     _menu: gtk::Menu,
     current: Option<BarItem>,
@@ -55,7 +59,7 @@ struct State {
     api: Api,
     app: AppHandle,
     actions: Actions,
-    icons: Vec<(String, Icon)>,
+    icons: Vec<Icon>,
     icon_files: HashMap<usize, CString>,
 }
 
@@ -94,6 +98,7 @@ unsafe fn load() -> Result<Api, Box<dyn std::error::Error>> {
         set_label: *lib.get(b"xapp_status_icon_set_label\0")?,
         set_tooltip: *lib.get(b"xapp_status_icon_set_tooltip_text\0")?,
         set_secondary_menu: *lib.get(b"xapp_status_icon_set_secondary_menu\0")?,
+        set_visible: *lib.get(b"xapp_status_icon_set_visible\0")?,
         _lib: lib,
     })
 }
@@ -106,33 +111,32 @@ pub fn sync(items: &[BarItem]) -> bool {
         let Some(state) = s.as_mut() else {
             return false;
         };
-        // Recreate everything when the set or order of items changes, so the
-        // panel order follows the item order; otherwise update in place.
-        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
-        let current: Vec<&str> = state.icons.iter().map(|(id, _)| id.as_str()).collect();
-        if ids != current {
-            state.icons.clear();
-            for item in items {
-                if let Some(icon) = unsafe { state.create(&item.id) } {
-                    state.icons.push((item.id.clone(), icon));
-                }
+        // Slot i shows item i; create slots as needed, hide the rest.
+        while state.icons.len() < items.len() {
+            let name = format!("ia-usage-{}", state.icons.len());
+            match unsafe { state.create(&name) } {
+                Some(icon) => state.icons.push(icon),
+                None => break,
             }
         }
-        for item in items {
-            unsafe { state.update(item) };
+        for (slot, item) in items.iter().enumerate().take(state.icons.len()) {
+            unsafe { state.update(slot, item) };
+        }
+        for slot in items.len()..state.icons.len() {
+            unsafe { state.hide(slot) };
         }
         true
     })
 }
 
 impl State {
-    unsafe fn create(&self, id: &str) -> Option<Icon> {
+    unsafe fn create(&self, name: &str) -> Option<Icon> {
         let raw = (self.api.new)();
         if raw.is_null() {
             return None;
         }
         let obj = glib::Object::from_glib_full(raw as *mut glib::gobject_ffi::GObject);
-        let name = CString::new(format!("ia-usage-{id}")).ok()?;
+        let name = CString::new(name).ok()?;
         (self.api.set_name)(raw, name.as_ptr());
 
         let menu = gtk::Menu::new();
@@ -165,15 +169,23 @@ impl State {
         })
     }
 
-    unsafe fn update(&mut self, item: &BarItem) {
+    unsafe fn hide(&mut self, slot: usize) {
+        let icon = &mut self.icons[slot];
+        if icon.current.take().is_some() {
+            (self.api.set_visible)(icon.obj.as_ptr() as *mut c_void, 0);
+        }
+    }
+
+    unsafe fn update(&mut self, slot: usize, item: &BarItem) {
         let icon_path = item.icon.and_then(|bytes| self.icon_file(bytes));
-        let Some((_, icon)) = self.icons.iter_mut().find(|(id, _)| *id == item.id) else {
-            return;
-        };
+        let icon = &mut self.icons[slot];
         if icon.current.as_ref() == Some(item) {
             return;
         }
         let raw = icon.obj.as_ptr() as *mut c_void;
+        if icon.current.is_none() {
+            (self.api.set_visible)(raw, 1);
+        }
         let empty = CString::default();
         // XApp takes an icon name or an absolute file path; empty hides it.
         (self.api.set_icon_name)(raw, icon_path.as_ref().unwrap_or(&empty).as_ptr());

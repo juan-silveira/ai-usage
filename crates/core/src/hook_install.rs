@@ -177,6 +177,34 @@ pub fn install(target: &Target, exe: &Path) -> std::io::Result<()> {
     write_config(&target.config_path, &config)
 }
 
+/// Whether the provider's config currently runs an ia-usage hook.
+pub fn is_installed(target: &Target) -> bool {
+    let Ok(text) = std::fs::read_to_string(&target.config_path) else {
+        return false;
+    };
+    let Ok(config) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    config
+        .get("hooks")
+        .and_then(Value::as_object)
+        .is_some_and(|events| {
+            events
+                .values()
+                .flat_map(|g| g.as_array().into_iter().flatten())
+                .any(|group| {
+                    group
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|l| l.iter().any(|h| is_ours(h, target.provider)))
+                })
+        })
+}
+
+pub fn target(provider: &str) -> Option<Target> {
+    targets().into_iter().find(|t| t.provider == provider)
+}
+
 /// Returns true if the file had our hooks.
 pub fn uninstall(target: &Target) -> std::io::Result<bool> {
     if !target.config_path.exists() {

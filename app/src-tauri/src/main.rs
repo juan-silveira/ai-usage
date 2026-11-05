@@ -3,6 +3,7 @@
 
 mod alerts;
 mod bar;
+mod connect;
 mod sound;
 mod updates;
 mod usage_alerts;
@@ -21,6 +22,7 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -34,6 +36,8 @@ use widget::WidgetSettings;
 /// Session files are tiny and local, so they can be scanned often.
 const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const TRAY_PREFIX: &str = "bar-";
+/// Passed by the system autostart entry: start in the panel, window hidden.
+const HIDDEN_ARG: &str = "--hidden";
 const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,11 +68,36 @@ struct Settings {
     /// aggressively; 1 minute triggers HTTP 429 on Claude.
     #[serde(default = "default_poll_minutes")]
     poll_minutes: u64,
+    #[serde(default)]
+    theme: ThemeChoice,
+    /// Set once autostart has been turned on by default on the first run,
+    /// so a user who turns it off isn't overridden on the next start.
+    #[serde(default)]
+    autostart_configured: bool,
     #[serde(default = "enabled")]
     check_updates: bool,
     /// Last version announced, so each release notifies only once.
     #[serde(default)]
     update_notified: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ThemeChoice {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    fn window_theme(self) -> Option<tauri::Theme> {
+        match self {
+            ThemeChoice::System => None,
+            ThemeChoice::Light => Some(tauri::Theme::Light),
+            ThemeChoice::Dark => Some(tauri::Theme::Dark),
+        }
+    }
 }
 
 fn default_poll_minutes() -> u64 {
@@ -96,6 +125,8 @@ impl Default for Settings {
             sound_threshold: true,
             widget: WidgetSettings::default(),
             poll_minutes: default_poll_minutes(),
+            theme: ThemeChoice::default(),
+            autostart_configured: false,
             check_updates: true,
             update_notified: None,
         }
@@ -388,6 +419,41 @@ fn set_poll_minutes(app: AppHandle, minutes: u64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    }
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_theme(app: AppHandle, theme: ThemeChoice) -> Result<(), String> {
+    // Native title bar follows too; None means "follow the system".
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_theme(theme.window_theme());
+    }
+    change_settings(&app, |s| s.theme = theme).map(|_| ())
+}
+
+#[tauri::command]
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("só links https".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
     change_settings(&app, |s| s.check_updates = enabled).map(|_| ())
 }
@@ -612,10 +678,28 @@ fn build_menu(app: &mut tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 }
 
 fn main() {
+    // `<app> hook <provider>`: the agents' hooks call the app binary itself,
+    // so installing the app is enough for live sessions. Handle it before
+    // any GUI setup; it must be fast, silent and always succeed.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("hook") {
+        if let Some(provider @ ("claude" | "codex")) = args.get(2).map(String::as_str) {
+            if let Ok(payload) = serde_json::from_reader::<_, serde_json::Value>(std::io::stdin()) {
+                let _ = ia_usage_core::sessions::apply_hook_event(provider, &payload);
+            }
+        }
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec![HIDDEN_ARG]),
+        ))
         .manage(Snapshot::default())
+        .manage(connect::Logins::default())
         .invoke_handler(tauri::generate_handler![
             get_usage,
             get_sessions,
@@ -633,6 +717,15 @@ fn main() {
             get_update,
             set_check_updates,
             set_poll_minutes,
+            set_theme,
+            open_url,
+            get_autostart,
+            set_autostart,
+            connect::get_connections,
+            connect::start_login,
+            connect::send_login_code,
+            connect::cancel_login,
+            connect::set_hooks,
             open_update,
             set_sound_enabled,
             preview_sound,
@@ -663,6 +756,26 @@ fn main() {
                 _ => {}
             });
             update_tray(app.handle());
+            let theme = app.state::<Snapshot>().settings.lock().unwrap().theme;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_theme(theme.window_theme());
+                // Started by the system at login: stay in the panel only.
+                if !std::env::args().any(|a| a == HIDDEN_ARG) {
+                    let _ = w.show();
+                }
+            }
+
+            // Start with the system by default, decided once on first run.
+            let configured = app
+                .state::<Snapshot>()
+                .settings
+                .lock()
+                .unwrap()
+                .autostart_configured;
+            if !configured {
+                let _ = app.autolaunch().enable();
+                let _ = change_settings(app.handle(), |s| s.autostart_configured = true);
+            }
             let widget_settings = app
                 .state::<Snapshot>()
                 .settings

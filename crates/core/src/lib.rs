@@ -5,6 +5,7 @@
 //! Tokens are only ever read, never refreshed or rewritten: the CLIs rotate
 //! refresh tokens, so refreshing here could log the user out of the CLI.
 
+pub mod cli_locate;
 pub mod hook_install;
 pub mod model;
 pub mod poller;

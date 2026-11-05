@@ -7,16 +7,26 @@
   --ok: #10a37f;
   --warn: #e0a100;
   --danger: #d9534f;
-  color-scheme: light dark;
+  color-scheme: light;
 }
+/* Theme: follows the system unless the user picked one (data-theme). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #17171c;
     --card: #222229;
     --text: #ececf1;
     --muted: #9a9aa8;
     --track: #34343e;
+    color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #17171c;
+  --card: #222229;
+  --text: #ececf1;
+  --muted: #9a9aa8;
+  --track: #34343e;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
@@ -120,3 +130,21 @@ input[type="range"] { width: 55%; accent-color: var(--ok); }
   margin: 8px 0 0; padding: 8px 12px; border-radius: 10px;
   background: color-mix(in srgb, var(--ok) 18%, var(--card)); font-size: 12px;
 }
+.conn { display: grid; gap: 6px; padding-top: 6px; border-top: 1px solid var(--track); }
+.conn:first-child { border-top: 0; padding-top: 0; }
+.conn .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.conn .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.conn .who img { width: 18px; height: 18px; }
+.conn .name { font-weight: 600; font-size: 13px; }
+.conn .state { font-size: 11px; color: var(--muted); }
+.conn .state.ok { color: var(--ok); }
+.conn .state.bad { color: var(--warn); }
+.conn .login { display: grid; gap: 6px; font-size: 12px; background: var(--bg); border-radius: 8px; padding: 8px; }
+.conn .login .line { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.conn .row { display: flex; gap: 6px; align-items: center; }
+.conn input[type="text"] {
+  flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; color: var(--text);
+  background: var(--card); border: 1px solid var(--track); border-radius: 6px;
+}
+.conn code { font-size: 11px; background: var(--bg); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+a { color: var(--ok); }
