@@ -220,5 +220,8 @@
   "update.downloading": "正在下载… {pct}%",
   "update.install_failed": "无法在本机安装；正在打开下载页面。",
   "conn.disabled": "未在 AI Usage 中跟踪",
-  "conn.app_disconnect_confirm": "AI Usage 将停止检查 {name}。你在那里的登录状态保持不变。"
+  "conn.app_disconnect_confirm": "AI Usage 将停止检查 {name}。你在那里的登录状态保持不变。",
+  "conn.needs_node": "需要 Node.js — 请先安装：",
+  "conn.then": "然后：",
+  "conn.needs_node_link": "需要 Node.js（从 nodejs.org 或包管理器安装）。然后："
 }

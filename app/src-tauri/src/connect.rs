@@ -24,8 +24,27 @@ struct Agent {
     cli: &'static str,
     login_args: &'static [&'static str],
     logout_args: &'static [&'static str],
+    /// Command that installs the CLI on this OS.
     install: &'static str,
+    /// Whether `install` uses npm (and so needs Node.js).
+    needs_node: bool,
 }
+
+/// Claude Code's own installer, no Node.js needed.
+const CLAUDE_INSTALL: &str = if cfg!(windows) {
+    "irm https://claude.ai/install.ps1 | iex"
+} else {
+    "curl -fsSL https://claude.ai/install.sh | bash"
+};
+
+/// How to get Node.js (for npm-installed CLIs), where there's a standard way.
+const NODE_INSTALL: Option<&str> = if cfg!(windows) {
+    Some("winget install OpenJS.NodeJS.LTS")
+} else if cfg!(target_os = "macos") {
+    Some("brew install node")
+} else {
+    None
+};
 
 const AGENTS: &[Agent] = &[
     Agent {
@@ -34,7 +53,8 @@ const AGENTS: &[Agent] = &[
         cli: "claude",
         login_args: &["auth", "login", "--claudeai"],
         logout_args: &["auth", "logout"],
-        install: "npm install -g @anthropic-ai/claude-code",
+        install: CLAUDE_INSTALL,
+        needs_node: false,
     },
     Agent {
         id: "codex",
@@ -43,6 +63,7 @@ const AGENTS: &[Agent] = &[
         login_args: &["login"],
         logout_args: &["logout"],
         install: "npm install -g @openai/codex",
+        needs_node: true,
     },
 ];
 
@@ -63,6 +84,9 @@ pub struct Connection {
     kind: &'static str,
     cli_path: Option<PathBuf>,
     install_command: &'static str,
+    /// Set when the install command needs npm and it isn't found: how to
+    /// get Node.js first ("" when there's no single command, e.g. Linux).
+    node_install: Option<&'static str>,
     hooks_installed: bool,
     login_running: bool,
     /// For "key": where the key comes from ("env" or "file"), if any.
@@ -98,6 +122,8 @@ pub fn get_connections(app: AppHandle) -> Vec<Connection> {
         kind: "cli",
         cli_path: cli_locate::find(a.cli),
         install_command: a.install,
+        node_install: (a.needs_node && cli_locate::find("npm").is_none())
+            .then_some(NODE_INSTALL.unwrap_or("")),
         hooks_installed: hook_install::target(a.id).is_some_and(|t| hook_install::is_installed(&t)),
         login_running: running.contains_key(a.id),
         key_source: None,
@@ -109,6 +135,7 @@ pub fn get_connections(app: AppHandle) -> Vec<Connection> {
         kind,
         cli_path: None,
         install_command: "",
+        node_install: None,
         hooks_installed: false,
         login_running: false,
         key_source: (id == "openrouter")

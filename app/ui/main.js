@@ -558,9 +558,19 @@ function renderConnections() {
         : login.logoutError
           ? `<div class="login"><span>${escapeHtml(t("conn.logout_failed"))}</span><span class="line">${escapeHtml(login.logoutError)}</span></div>`
           : "";
+      // Install steps when the CLI is missing; npm-based ones first need
+      // Node.js, which a fresh machine often lacks.
+      const node = c.node_install == null
+        ? ""
+        : c.node_install
+          ? `<span class="muted">${escapeHtml(t("conn.needs_node"))}</span>
+             <div class="row"><code>${escapeHtml(c.node_install)}</code>
+               <button class="text" data-act="copy-node">${escapeHtml(t("conn.copy"))}</button></div>
+             <span class="muted">${escapeHtml(t("conn.then"))}</span>`
+          : `<span class="muted">${escapeHtml(t("conn.needs_node_link"))}</span>`;
       const install = c.cli_path
         ? ""
-        : `<div class="row"><code>${escapeHtml(c.install_command)}</code>
+        : `${node}<div class="row"><code>${escapeHtml(c.install_command)}</code>
              <button class="text" data-act="copy">${escapeHtml(t("conn.copy"))}</button></div>`;
       return `
       <div class="conn" data-provider="${escapeHtml(c.provider)}">
@@ -685,8 +695,8 @@ document.getElementById("connections").addEventListener("click", async (e) => {
   } else if (act === "open-url") {
     e.preventDefault();
     invoke("open_url", { url: loginState[provider]?.url });
-  } else if (act === "copy") {
-    navigator.clipboard?.writeText(conn.install_command);
+  } else if (act === "copy" || act === "copy-node") {
+    navigator.clipboard?.writeText(act === "copy" ? conn.install_command : conn.node_install);
     e.target.textContent = t("conn.copied");
   }
 });
@@ -717,6 +727,14 @@ listen("login-event", (e) => {
 
 listen("usage-updated", () => renderConnections());
 loadConnections();
+
+// A CLI installed while the app runs shows up without restarting it: check
+// again when the window regains focus, and every few seconds while the
+// preferences are open and a CLI is still missing.
+window.addEventListener("focus", loadConnections);
+setInterval(() => {
+  if (activeTab === "settings" && connections.some((c) => c.kind === "cli" && !c.cli_path)) loadConnections();
+}, 4000);
 
 // ---------- Autostart ----------
 const autostart = document.getElementById("autostart");

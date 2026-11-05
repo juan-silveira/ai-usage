@@ -220,5 +220,8 @@
   "update.downloading": "Descargando… {pct}%",
   "update.install_failed": "No se pudo instalar aquí; abriendo la página de descarga.",
   "conn.disabled": "No se sigue en AI Usage",
-  "conn.app_disconnect_confirm": "AI Usage dejará de consultar {name}. Tu sesión allí no cambia."
+  "conn.app_disconnect_confirm": "AI Usage dejará de consultar {name}. Tu sesión allí no cambia.",
+  "conn.needs_node": "Requiere Node.js — instálalo primero:",
+  "conn.then": "Después:",
+  "conn.needs_node_link": "Requiere Node.js (de nodejs.org o tu gestor de paquetes). Después:"
 }

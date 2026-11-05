@@ -220,5 +220,8 @@
   "update.downloading": "Download in corso… {pct}%",
   "update.install_failed": "Impossibile installare qui; apertura della pagina di download.",
   "conn.disabled": "Non monitorato in AI Usage",
-  "conn.app_disconnect_confirm": "AI Usage smetterà di controllare {name}. Il tuo accesso lì resta invariato."
+  "conn.app_disconnect_confirm": "AI Usage smetterà di controllare {name}. Il tuo accesso lì resta invariato.",
+  "conn.needs_node": "Richiede Node.js — installalo prima:",
+  "conn.then": "Poi:",
+  "conn.needs_node_link": "Richiede Node.js (da nodejs.org o dal gestore di pacchetti). Poi:"
 }

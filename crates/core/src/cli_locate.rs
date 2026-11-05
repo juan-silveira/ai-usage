@@ -15,9 +15,16 @@ pub fn find(name: &str) -> Option<PathBuf> {
 }
 
 /// PATH for running a found CLI: its own directory first, because npm CLIs
-/// are `#!/usr/bin/env node` scripts and `node` lives next to them.
+/// are `#!/usr/bin/env node` scripts and `node` usually lives next to them;
+/// then Node's own directory, which on Windows is elsewhere (and may be
+/// missing from this process's PATH if Node was installed after it started).
 pub fn child_path(cli: &Path) -> std::ffi::OsString {
     let mut dirs: Vec<PathBuf> = cli.parent().map(Path::to_path_buf).into_iter().collect();
+    if let Some(node_dir) = find("node").and_then(|n| n.parent().map(Path::to_path_buf)) {
+        if !dirs.contains(&node_dir) {
+            dirs.push(node_dir);
+        }
+    }
     if let Some(path) = std::env::var_os("PATH") {
         dirs.extend(std::env::split_paths(&path));
     }
@@ -55,8 +62,22 @@ fn candidate_dirs() -> Vec<PathBuf> {
         PathBuf::from("/usr/local/bin"),
         PathBuf::from("/opt/homebrew/bin"),
     ];
+    // Windows: global npm packages, Node itself and winget's links. These
+    // are listed explicitly because a PATH change made by an installer
+    // doesn't reach a process that was already running.
     if let Some(appdata) = std::env::var_os("APPDATA") {
         dirs.push(PathBuf::from(appdata).join("npm"));
+    }
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        dirs.push(PathBuf::from(program_files).join("nodejs"));
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        dirs.push(
+            PathBuf::from(local)
+                .join("Microsoft")
+                .join("WinGet")
+                .join("Links"),
+        );
     }
     // Every installed Node version under asdf / nvm, newest name last.
     for root in [

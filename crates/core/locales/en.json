@@ -220,5 +220,8 @@
   "update.downloading": "Downloading… {pct}%",
   "update.install_failed": "Couldn't install here; opening the download page.",
   "conn.disabled": "Not tracked in AI Usage",
-  "conn.app_disconnect_confirm": "AI Usage will stop checking {name}. Your sign-in there stays as it is."
+  "conn.app_disconnect_confirm": "AI Usage will stop checking {name}. Your sign-in there stays as it is.",
+  "conn.needs_node": "Needs Node.js — install it first:",
+  "conn.then": "Then:",
+  "conn.needs_node_link": "Needs Node.js (from nodejs.org or your package manager). Then:"
 }

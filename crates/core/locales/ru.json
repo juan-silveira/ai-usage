@@ -220,5 +220,8 @@
   "update.downloading": "Загрузка… {pct}%",
   "update.install_failed": "Не удалось установить здесь; открывается страница загрузки.",
   "conn.disabled": "Не отслеживается в AI Usage",
-  "conn.app_disconnect_confirm": "AI Usage перестанет проверять {name}. Ваш вход там останется как есть."
+  "conn.app_disconnect_confirm": "AI Usage перестанет проверять {name}. Ваш вход там останется как есть.",
+  "conn.needs_node": "Нужен Node.js — сначала установите его:",
+  "conn.then": "Затем:",
+  "conn.needs_node_link": "Нужен Node.js (с nodejs.org или из менеджера пакетов). Затем:"
 }

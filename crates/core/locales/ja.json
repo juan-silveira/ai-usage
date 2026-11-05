@@ -220,5 +220,8 @@
   "update.downloading": "ダウンロード中… {pct}%",
   "update.install_failed": "ここにはインストールできませんでした。ダウンロードページを開きます。",
   "conn.disabled": "AI Usage で追跡していません",
-  "conn.app_disconnect_confirm": "AI Usage は {name} の確認を停止します。そちらのサインインはそのままです。"
+  "conn.app_disconnect_confirm": "AI Usage は {name} の確認を停止します。そちらのサインインはそのままです。",
+  "conn.needs_node": "Node.js が必要です。先にインストールしてください：",
+  "conn.then": "その後：",
+  "conn.needs_node_link": "Node.js が必要です（nodejs.org またはパッケージマネージャーから）。その後："
 }

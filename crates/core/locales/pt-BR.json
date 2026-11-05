@@ -220,5 +220,8 @@
   "update.downloading": "Baixando… {pct}%",
   "update.install_failed": "Não deu para instalar aqui; abrindo a página de download.",
   "conn.disabled": "Não acompanhado no AI Usage",
-  "conn.app_disconnect_confirm": "O AI Usage vai parar de consultar o {name}. Seu login lá continua como está."
+  "conn.app_disconnect_confirm": "O AI Usage vai parar de consultar o {name}. Seu login lá continua como está.",
+  "conn.needs_node": "Precisa do Node.js — instale antes:",
+  "conn.then": "Depois:",
+  "conn.needs_node_link": "Precisa do Node.js (do nodejs.org ou do gerenciador de pacotes). Depois:"
 }

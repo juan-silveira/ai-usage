@@ -203,5 +203,8 @@
   "update.downloading": "Đang tải xuống… {pct}%",
   "update.install_failed": "Không cài đặt được ở đây; đang mở trang tải xuống.",
   "conn.disabled": "Không theo dõi trong AI Usage",
-  "conn.app_disconnect_confirm": "AI Usage sẽ ngừng kiểm tra {name}. Đăng nhập của bạn ở đó vẫn giữ nguyên."
+  "conn.app_disconnect_confirm": "AI Usage sẽ ngừng kiểm tra {name}. Đăng nhập của bạn ở đó vẫn giữ nguyên.",
+  "conn.needs_node": "Cần Node.js — hãy cài trước:",
+  "conn.then": "Sau đó:",
+  "conn.needs_node_link": "Cần Node.js (từ nodejs.org hoặc trình quản lý gói). Sau đó:"
 }
