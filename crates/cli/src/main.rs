@@ -209,6 +209,12 @@ fn print_table(usage: &[ProviderUsage]) {
             ProviderStatus::TokenExpired => {
                 println!("  token expirado — rode a CLI do provedor (ex.: `claude`, `codex`) para renovar")
             }
+            ProviderStatus::RateLimited { retry_after_secs } => println!(
+                "  limite de consultas atingido (HTTP 429){}",
+                retry_after_secs
+                    .map(|s| format!(" — tente em {} min", s.div_ceil(60)))
+                    .unwrap_or_default()
+            ),
             ProviderStatus::Error { message } => println!("  erro: {message}"),
         }
         println!();

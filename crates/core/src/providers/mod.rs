@@ -24,6 +24,7 @@ pub trait Provider: Send + Sync {
             plan,
             fetched_at: Utc::now(),
             status,
+            stale: None,
         }
     }
 }
@@ -43,6 +44,11 @@ pub(crate) fn http_agent() -> ureq::Agent {
 pub(crate) fn status_from_http_error(err: ureq::Error) -> ProviderStatus {
     match err {
         ureq::Error::Status(401 | 403, _) => ProviderStatus::TokenExpired,
+        ureq::Error::Status(429, resp) => ProviderStatus::RateLimited {
+            retry_after_secs: resp
+                .header("retry-after")
+                .and_then(|v| v.trim().parse().ok()),
+        },
         ureq::Error::Status(code, resp) => {
             let body = resp.into_string().unwrap_or_default();
             let snippet: String = body.chars().take(200).collect();

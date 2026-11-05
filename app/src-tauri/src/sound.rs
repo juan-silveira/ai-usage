@@ -2,6 +2,7 @@
 //!
 //! - `NeedsInput`: two quick rising bell strikes, played twice — urgent.
 //! - `Done`: a short rising major arpeggio — finished, no rush.
+//! - `Threshold`: two soft falling notes — usage crossed an alert level.
 
 use std::num::NonZero;
 use std::sync::mpsc::{self, Sender};
@@ -18,6 +19,7 @@ const RATE: u32 = 44_100;
 pub enum Sound {
     NeedsInput,
     Done,
+    Threshold,
 }
 
 /// Plays without blocking. Audio failures (no device, busy) are ignored:
@@ -64,6 +66,10 @@ fn notes(sound: Sound) -> &'static [(f32, f32, f32)] {
             (783.99, 0.22, 0.40),  // G5
             (1046.50, 0.33, 0.90), // C6
         ],
+        Sound::Threshold => &[
+            (880.0, 0.00, 0.40),  // A5
+            (659.25, 0.18, 0.70), // E5
+        ],
     }
 }
 
@@ -95,7 +101,7 @@ mod tests {
 
     #[test]
     fn rendered_sounds_are_short_and_not_clipping() {
-        for sound in [Sound::NeedsInput, Sound::Done] {
+        for sound in [Sound::NeedsInput, Sound::Done, Sound::Threshold] {
             let samples = render(sound);
             let secs = samples.len() as f32 / RATE as f32;
             assert!((0.5..2.0).contains(&secs), "{sound:?} lasts {secs}s");

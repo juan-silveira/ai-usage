@@ -3,7 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use ia_usage_core::{ProviderStatus, ProviderUsage, Session, SessionState};
+use chrono::{DateTime, Datelike, Local, Utc};
+use ia_usage_core::{ProviderStatus, ProviderUsage, Session, SessionState, UsageWindow};
 use serde::{Deserialize, Serialize};
 
 pub const APP_ITEM: &str = "app";
@@ -22,6 +23,18 @@ pub enum BarFormat {
     Session,
     /// Session and weekly, e.g. "5/17%".
     SessionWeekly,
+}
+
+/// Whether the panel text also shows when the window resets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BarReset {
+    #[default]
+    Off,
+    /// Time left, e.g. "3h46".
+    Remaining,
+    /// Local clock time, e.g. "12:40" (or "ter 23:00" beyond 24 h).
+    Clock,
 }
 
 /// Per-provider panel options.
@@ -81,7 +94,9 @@ pub fn items(
     usage: &[ProviderUsage],
     sessions: &[Session],
     format: BarFormat,
+    reset: BarReset,
     providers: &BTreeMap<String, ProviderBar>,
+    now: DateTime<Utc>,
 ) -> Vec<BarItem> {
     let waiting = |provider: Option<&str>| {
         sessions
@@ -117,6 +132,18 @@ pub fn items(
                     _ => format!("{peak:.0}%"),
                 },
                 _ => format!("{peak:.0}%"),
+            };
+            // The reset shown is for the window the number is about.
+            let reset_window = match format {
+                BarFormat::Session | BarFormat::SessionWeekly => {
+                    windows.iter().find(|w| w.key == "session")
+                }
+                _ => None,
+            }
+            .or_else(|| peak_window(windows));
+            let value = match reset_window.and_then(|w| reset_text(w, reset, now)) {
+                Some(when) => format!("{value} · {when}"),
+                None => value,
             };
 
             let icon = provider_icon(&p.provider).filter(|_| config.show_icon);
@@ -160,6 +187,36 @@ pub fn items(
         });
     }
     items
+}
+
+fn peak_window(windows: &[UsageWindow]) -> Option<&UsageWindow> {
+    windows
+        .iter()
+        .max_by(|a, b| a.used_percent.total_cmp(&b.used_percent))
+}
+
+const WEEKDAYS: [&str; 7] = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+
+fn reset_text(w: &UsageWindow, mode: BarReset, now: DateTime<Utc>) -> Option<String> {
+    let at = w.resets_at?;
+    let secs = (at - now).num_seconds().max(0);
+    match mode {
+        BarReset::Off => None,
+        BarReset::Remaining => Some(match secs {
+            0..=3599 => format!("{}min", secs / 60),
+            3600..=86_399 => format!("{}h{:02}", secs / 3600, (secs % 3600) / 60),
+            _ => format!("{}d{}h", secs / 86_400, (secs % 86_400) / 3600),
+        }),
+        BarReset::Clock => {
+            let local = at.with_timezone(&Local);
+            Some(if secs < 86_400 {
+                local.format("%H:%M").to_string()
+            } else {
+                let day = WEEKDAYS[local.weekday().num_days_from_monday() as usize];
+                format!("{day} {}", local.format("%H:%M"))
+            })
+        }
+    }
 }
 
 fn provider_tooltip(p: &ProviderUsage) -> String {
@@ -207,6 +264,7 @@ mod tests {
             status: ProviderStatus::Ok {
                 windows: vec![w("session", session), w("weekly", weekly)],
             },
+            stale: None,
         }
     }
 
@@ -231,7 +289,9 @@ mod tests {
             &[usage("claude", 5.0, 17.0), usage("codex", 40.0, 2.0)],
             &[],
             BarFormat::Peak,
+            BarReset::Off,
             &BTreeMap::new(),
+            Utc::now(),
         );
         let labels: Vec<_> = items
             .iter()
@@ -264,11 +324,32 @@ mod tests {
             &[usage("claude", 5.0, 17.0), usage("codex", 40.0, 2.0)],
             &[waiting_session("claude")],
             BarFormat::SessionWeekly,
+            BarReset::Off,
             &cfg,
+            Utc::now(),
         );
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "⚠1 Claudinho 5/17%");
         assert!(items[0].icon.is_none());
+    }
+
+    #[test]
+    fn shows_time_left_for_the_session_window() {
+        let now = Utc::now();
+        let mut u = usage("claude", 7.0, 17.0);
+        if let ProviderStatus::Ok { windows } = &mut u.status {
+            windows[0].resets_at = Some(now + chrono::Duration::minutes(226));
+            windows[1].resets_at = Some(now + chrono::Duration::days(5));
+        }
+        let items = items(
+            &[u],
+            &[],
+            BarFormat::SessionWeekly,
+            BarReset::Remaining,
+            &BTreeMap::new(),
+            now,
+        );
+        assert_eq!(items[0].label, "7/17% · 3h46");
     }
 
     #[test]
@@ -277,7 +358,9 @@ mod tests {
             &[usage("claude", 5.0, 17.0)],
             &[waiting_session("codex")],
             BarFormat::Off,
+            BarReset::Off,
             &BTreeMap::new(),
+            Utc::now(),
         );
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].id, APP_ITEM);

@@ -7,10 +7,12 @@
 
 pub mod hook_install;
 pub mod model;
+pub mod poller;
 pub mod providers;
 pub mod sessions;
 
-pub use model::{ProviderStatus, ProviderUsage, UsageWindow};
+pub use model::{ProviderStatus, ProviderUsage, Stale, UsageWindow};
+pub use poller::Poller;
 pub use providers::{all_providers, Provider};
 pub use sessions::{list_sessions, Session, SessionState};
 

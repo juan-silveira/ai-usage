@@ -103,3 +103,8 @@ input[type="checkbox"] { accent-color: var(--ok); }
 .preview { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;
   background: #2b2b2b; color: #eee; padding: 2px 8px; border-radius: 4px; }
 .preview img { width: 14px; height: 14px; }
+.stale { margin: 8px 0 0; font-size: 11px; color: var(--warn); }
+#thresholds {
+  font: inherit; font-size: 12px; width: 90px; padding: 3px 6px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--track); border-radius: 6px; text-align: right;
+}

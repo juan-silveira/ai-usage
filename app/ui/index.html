@@ -27,7 +27,19 @@
           <option value="off">Só o ícone do app</option>
         </select>
       </label>
+      <label class="pref">
+        <span>Mostrar fim da janela</span>
+        <select id="bar-reset">
+          <option value="off">Não</option>
+          <option value="remaining">Tempo restante (3h46)</option>
+          <option value="clock">Horário (12:40)</option>
+        </select>
+      </label>
       <div id="provider-bar"></div>
+      <label class="pref">
+        <span>Alertar ao passar de (%)</span>
+        <input type="text" id="thresholds" inputmode="numeric" placeholder="80, 95" />
+      </label>
       <div class="pref">
         <label><input type="checkbox" id="sound-needs-input" /> Som quando precisa de você</label>
         <button class="small" data-preview="needs_input" title="Ouvir">▶</button>
@@ -35,6 +47,10 @@
       <div class="pref">
         <label><input type="checkbox" id="sound-done" /> Som quando conclui</label>
         <button class="small" data-preview="done" title="Ouvir">▶</button>
+      </div>
+      <div class="pref">
+        <label><input type="checkbox" id="sound-threshold" /> Som ao passar de uma faixa</label>
+        <button class="small" data-preview="threshold" title="Ouvir">▶</button>
       </div>
     </section>
     <footer id="updated" class="muted"></footer>

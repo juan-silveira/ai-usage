@@ -23,6 +23,10 @@ pub enum ProviderStatus {
     NoCredentials,
     /// The stored token expired; the provider's own CLI must refresh it.
     TokenExpired,
+    /// The usage endpoint throttled us (HTTP 429).
+    RateLimited {
+        retry_after_secs: Option<u64>,
+    },
     Error {
         message: String,
     },
@@ -37,6 +41,17 @@ pub struct ProviderUsage {
     pub fetched_at: DateTime<Utc>,
     #[serde(flatten)]
     pub status: ProviderStatus,
+    /// Set when this is the last good result being shown because a newer
+    /// fetch failed or is being held back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<Stale>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Stale {
+    pub reason: String,
+    /// When the next fetch will be attempted, if it is being held back.
+    pub retry_at: Option<DateTime<Utc>>,
 }
 
 impl ProviderUsage {

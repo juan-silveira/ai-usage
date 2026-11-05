@@ -14,6 +14,7 @@ const acknowledged = new Map();
 const STATUS_TEXT = {
   no_credentials: "Sem login — instale e entre na CLI deste provedor.",
   token_expired: "Token expirado — rode a CLI do provedor (claude, codex) para renovar.",
+  rate_limited: "Limite de consultas atingido (HTTP 429). Nova tentativa automática em alguns minutos.",
 };
 
 function escapeHtml(s) {
@@ -30,8 +31,20 @@ function resetText(iso) {
   return `reinicia em ${left} · ${when}`;
 }
 
+// Colors follow the user's alert levels: first level = warning, last = danger.
+let thresholds = [80, 95];
 function severity(pct) {
-  return pct >= 90 ? "danger" : pct >= 70 ? "warn" : "";
+  if (!thresholds.length) return "";
+  return pct >= thresholds[thresholds.length - 1] ? "danger" : pct >= thresholds[0] ? "warn" : "";
+}
+
+function staleNotice(p) {
+  if (!p.stale) return "";
+  const at = new Date(p.fetched_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const retry = p.stale.retry_at
+    ? ` · nova tentativa às ${new Date(p.stale.retry_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+    : "";
+  return `<p class="stale">Dados de ${at} — ${escapeHtml(p.stale.reason)}${retry}</p>`;
 }
 
 function renderProvider(p) {
@@ -51,7 +64,7 @@ function renderProvider(p) {
   } else {
     body = `<p class="status">${escapeHtml(STATUS_TEXT[p.status] ?? `Erro: ${p.message}`)}</p>`;
   }
-  return `<section class="card"><h2>${escapeHtml(p.display_name)} ${plan}</h2>${body}</section>`;
+  return `<section class="card"><h2>${escapeHtml(p.display_name)} ${plan}</h2>${body}${staleNotice(p)}</section>`;
 }
 
 function renderLimits() {
@@ -61,7 +74,8 @@ function renderLimits() {
   root.innerHTML = shown.length
     ? shown.map(renderProvider).join("")
     : `<p class="muted">Sem dados de limite para este provedor.</p>`;
-  const at = new Date(latest[0].fetched_at);
+  const fresh = latest.filter((p) => !p.stale).map((p) => new Date(p.fetched_at));
+  const at = fresh.length ? new Date(Math.max(...fresh)) : new Date(latest[0].fetched_at);
   document.getElementById("updated").textContent =
     `Atualizado às ${at.toLocaleTimeString()} · a cada 60 s`;
 }
@@ -206,6 +220,7 @@ barFormat.addEventListener("change", () => invoke("set_bar_format", { format: ba
 const soundToggles = {
   needs_input: document.getElementById("sound-needs-input"),
   done: document.getElementById("sound-done"),
+  threshold: document.getElementById("sound-threshold"),
 };
 for (const [sound, box] of Object.entries(soundToggles)) {
   box.addEventListener("change", () => invoke("set_sound_enabled", { sound, enabled: box.checked }));
@@ -229,6 +244,25 @@ function barPreview(id, cfg) {
     else if (f === "session_weekly" && pct("session") != null && pct("weekly") != null)
       value = `${Math.round(pct("session"))}/${Math.round(pct("weekly"))}%`;
     else value = `${Math.round(peak)}%`;
+  }
+  if (usage?.status === "ok" && barSettings.bar_reset !== "off") {
+    const f = barSettings.bar_format;
+    const byPeak = [...usage.windows].sort((a, b) => b.used_percent - a.used_percent)[0];
+    const w = ((f === "session" || f === "session_weekly") && usage.windows.find((x) => x.key === "session")) || byPeak;
+    if (w?.resets_at) {
+      const at = new Date(w.resets_at);
+      const secs = Math.max(0, (at - Date.now()) / 1000);
+      let when;
+      if (barSettings.bar_reset === "remaining") {
+        when = secs < 3600 ? `${Math.floor(secs / 60)}min`
+          : secs < 86400 ? `${Math.floor(secs / 3600)}h${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}`
+          : `${Math.floor(secs / 86400)}d${Math.floor((secs % 86400) / 3600)}h`;
+      } else {
+        const hm = at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        when = secs < 86400 ? hm : `${["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][at.getDay()]} ${hm}`;
+      }
+      value += ` · ${when}`;
+    }
   }
   const icon = cfg.show_icon ? PROVIDER_ICON[id] : null;
   const name = cfg.name.trim() || barSettings.default_names[id];
@@ -293,8 +327,28 @@ barFormat.addEventListener("change", () => {
   renderProviderBar();
 });
 
+const barReset = document.getElementById("bar-reset");
+barReset.addEventListener("change", () => {
+  invoke("set_bar_reset", { reset: barReset.value });
+  if (barSettings) barSettings.bar_reset = barReset.value;
+  renderProviderBar();
+});
+
+const thresholdInput = document.getElementById("thresholds");
+thresholdInput.addEventListener("change", async () => {
+  const values = thresholdInput.value.split(/[^0-9]+/).filter(Boolean).map(Number);
+  thresholds = await invoke("set_alert_thresholds", { thresholds: values });
+  thresholdInput.value = thresholds.join(", ");
+  render();
+});
+
 invoke("get_settings").then((settings) => {
   barSettings = settings;
+  barReset.value = settings.bar_reset;
+  thresholds = settings.alert_thresholds;
+  thresholdInput.value = thresholds.join(", ");
+  soundToggles.threshold.checked = settings.sound_threshold;
+  render();
   renderProviderBar();
   barFormat.value = settings.bar_format;
   soundToggles.needs_input.checked = settings.sound_needs_input;

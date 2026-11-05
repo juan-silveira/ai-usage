@@ -4,6 +4,7 @@
 mod alerts;
 mod bar;
 mod sound;
+mod usage_alerts;
 #[cfg(target_os = "linux")]
 mod xapp_tray;
 
@@ -12,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use ia_usage_core::{fetch_all, list_sessions, ProviderUsage, Session};
+use ia_usage_core::{list_sessions, Poller, ProviderUsage, Session};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
@@ -21,8 +22,9 @@ use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 
 use alerts::{AlertKind, AlertTracker};
-use bar::{BarFormat, BarItem, ProviderBar};
+use bar::{BarFormat, BarItem, BarReset, ProviderBar};
 use sound::Sound;
+use usage_alerts::ThresholdTracker;
 
 const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// Session files are tiny and local, so they can be scanned often.
@@ -36,10 +38,21 @@ struct Settings {
     /// Panel options per provider id; missing entries use the defaults.
     #[serde(default)]
     providers: BTreeMap<String, ProviderBar>,
+    #[serde(default)]
+    bar_reset: BarReset,
+    /// Usage levels (%) that trigger an alert, ascending.
+    #[serde(default = "default_thresholds")]
+    alert_thresholds: Vec<u8>,
     #[serde(default = "enabled")]
     sound_needs_input: bool,
     #[serde(default = "enabled")]
     sound_done: bool,
+    #[serde(default = "enabled")]
+    sound_threshold: bool,
+}
+
+fn default_thresholds() -> Vec<u8> {
+    vec![80, 95]
 }
 
 fn enabled() -> bool {
@@ -51,8 +64,11 @@ impl Default for Settings {
         Self {
             bar_format: BarFormat::default(),
             providers: BTreeMap::new(),
+            bar_reset: BarReset::default(),
+            alert_thresholds: default_thresholds(),
             sound_needs_input: true,
             sound_done: true,
+            sound_threshold: true,
         }
     }
 }
@@ -88,6 +104,8 @@ struct Snapshot {
     sessions: Mutex<Vec<Session>>,
     alerts: Mutex<AlertTracker>,
     settings: Mutex<Settings>,
+    poller: Mutex<Poller>,
+    thresholds: Mutex<ThresholdTracker>,
     /// Tray icons currently shown by the Tauri backend: id -> icon bytes ptr.
     tray_icons: Mutex<Vec<(String, Option<usize>)>>,
     menu: Mutex<Option<Menu<tauri::Wry>>>,
@@ -178,10 +196,45 @@ fn set_sound_enabled(
         match sound {
             Sound::NeedsInput => s.sound_needs_input = enabled,
             Sound::Done => s.sound_done = enabled,
+            Sound::Threshold => s.sound_threshold = enabled,
         }
         s.clone()
     };
     settings.save(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_bar_reset(app: AppHandle, state: State<Snapshot>, reset: BarReset) -> Result<(), String> {
+    let settings = {
+        let mut s = state.settings.lock().unwrap();
+        s.bar_reset = reset;
+        s.clone()
+    };
+    update_tray(&app);
+    settings.save(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_alert_thresholds(
+    app: AppHandle,
+    state: State<Snapshot>,
+    thresholds: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    let mut clean: Vec<u8> = thresholds
+        .into_iter()
+        .filter(|t| (1..=100).contains(t))
+        .collect();
+    clean.sort_unstable();
+    clean.dedup();
+    clean.truncate(5);
+    let settings = {
+        let mut s = state.settings.lock().unwrap();
+        s.alert_thresholds = clean.clone();
+        s.clone()
+    };
+    let _ = app.emit("settings-updated", &settings);
+    settings.save(&app).map_err(|e| e.to_string())?;
+    Ok(clean)
 }
 
 #[tauri::command]
@@ -195,8 +248,28 @@ fn refresh_now(app: AppHandle) {
 }
 
 fn poll_usage(app: &AppHandle) {
-    let usage = fetch_all();
-    *app.state::<Snapshot>().usage.lock().unwrap() = usage.clone();
+    let snapshot = app.state::<Snapshot>();
+    let usage = snapshot.poller.lock().unwrap().poll();
+    *snapshot.usage.lock().unwrap() = usage.clone();
+
+    let settings = snapshot.settings.lock().unwrap().clone();
+    let alerts = snapshot
+        .thresholds
+        .lock()
+        .unwrap()
+        .update(&usage, &settings.alert_thresholds);
+    if settings.sound_threshold && !alerts.is_empty() {
+        sound::play(Sound::Threshold);
+    }
+    for alert in alerts {
+        let _ = app
+            .notification()
+            .builder()
+            .title(alert.title)
+            .body(alert.body)
+            .show();
+    }
+
     update_tray(app);
     let _ = app.emit("usage-updated", &usage);
 }
@@ -250,7 +323,14 @@ fn update_tray(app: &AppHandle) {
         let usage = snapshot.usage.lock().unwrap();
         let sessions = snapshot.sessions.lock().unwrap();
         let settings = snapshot.settings.lock().unwrap();
-        bar::items(&usage, &sessions, settings.bar_format, &settings.providers)
+        bar::items(
+            &usage,
+            &sessions,
+            settings.bar_format,
+            settings.bar_reset,
+            &settings.providers,
+            chrono::Utc::now(),
+        )
     };
     // Tray icons are created and changed on the UI thread on every platform.
     let handle = app.clone();
@@ -351,6 +431,8 @@ fn main() {
             get_settings,
             set_bar_format,
             set_provider_bar,
+            set_bar_reset,
+            set_alert_thresholds,
             set_sound_enabled,
             preview_sound,
             refresh_now
