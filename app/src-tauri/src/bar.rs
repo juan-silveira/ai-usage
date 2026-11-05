@@ -66,10 +66,26 @@ impl Default for ProviderBar {
     }
 }
 
+/// Providers shown by default in the tray and widget; later ones are opt-in,
+/// so an update doesn't suddenly add items to someone's panel.
+pub const SHOWN_BY_DEFAULT: [&str; 2] = ["claude", "codex"];
+
+impl ProviderBar {
+    pub fn default_for(provider: &str) -> Self {
+        Self {
+            show: SHOWN_BY_DEFAULT.contains(&provider),
+            ..Self::default()
+        }
+    }
+}
+
 pub fn default_name(provider: &str) -> String {
     match provider {
         "claude" => "CL".into(),
         "codex" => "CX".into(),
+        "copilot" => "GH".into(),
+        "cursor" => "CU".into(),
+        "openrouter" => "OR".into(),
         other => other.chars().take(2).collect::<String>().to_uppercase(),
     }
 }
@@ -78,6 +94,9 @@ pub fn provider_icon(provider: &str) -> Option<&'static [u8]> {
     match provider {
         "claude" => Some(include_bytes!("../icons/providers/claude.png")),
         "codex" => Some(include_bytes!("../icons/providers/codex.png")),
+        "copilot" => Some(include_bytes!("../icons/providers/copilot.png")),
+        "cursor" => Some(include_bytes!("../icons/providers/cursor.png")),
+        "openrouter" => Some(include_bytes!("../icons/providers/openrouter.png")),
         _ => None,
     }
 }
@@ -112,7 +131,10 @@ pub fn items(
             let ProviderStatus::Ok { windows } = &p.status else {
                 continue;
             };
-            let config = providers.get(&p.provider).cloned().unwrap_or_default();
+            let config = providers
+                .get(&p.provider)
+                .cloned()
+                .unwrap_or_else(|| ProviderBar::default_for(&p.provider));
             if !config.show {
                 continue;
             }

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod alerts;
+mod api;
 mod bar;
 mod connect;
 mod migrate;
@@ -78,6 +79,23 @@ struct Settings {
     autostart_configured: bool,
     #[serde(default = "enabled")]
     check_updates: bool,
+    #[serde(default)]
+    sound_tones: sound::Tones,
+    /// Alert sound volume, 0–100.
+    #[serde(default = "full_volume")]
+    sound_volume: u8,
+    /// Focus mode: notifications and sounds held back while set.
+    #[serde(default)]
+    mute: Mute,
+    /// Local HTTP API (see api.rs), off by default.
+    #[serde(default)]
+    api_enabled: bool,
+    #[serde(default = "default_api_port")]
+    api_port: u16,
+    /// Providers the user disconnected in the app (their own sign-in, e.g.
+    /// `gh` for Copilot, is left alone); they aren't polled.
+    #[serde(default)]
+    disabled_providers: Vec<String>,
     /// Interface language: a code from `i18n::LOCALES`, or "auto".
     #[serde(default = "auto_language")]
     language: String,
@@ -109,6 +127,37 @@ fn default_poll_minutes() -> u64 {
     5
 }
 
+fn default_api_port() -> u16 {
+    api::DEFAULT_PORT
+}
+
+fn full_volume() -> u8 {
+    100
+}
+
+/// Focus / meeting mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+enum Mute {
+    #[default]
+    Off,
+    Until {
+        until: chrono::DateTime<chrono::Utc>,
+    },
+    /// Until turned off.
+    Always,
+}
+
+impl Mute {
+    fn active(self) -> bool {
+        match self {
+            Mute::Off => false,
+            Mute::Until { until } => until > chrono::Utc::now(),
+            Mute::Always => true,
+        }
+    }
+}
+
 fn auto_language() -> String {
     "auto".into()
 }
@@ -135,6 +184,12 @@ impl Default for Settings {
             widget: WidgetSettings::default(),
             poll_minutes: default_poll_minutes(),
             language: auto_language(),
+            sound_tones: sound::Tones::default(),
+            sound_volume: full_volume(),
+            mute: Mute::Off,
+            api_enabled: false,
+            disabled_providers: Vec::new(),
+            api_port: default_api_port(),
             theme: ThemeChoice::default(),
             autostart_configured: false,
             check_updates: true,
@@ -209,7 +264,10 @@ fn acknowledge_session(state: State<Snapshot>, key: String) {
 fn get_settings(state: State<Snapshot>) -> SettingsView {
     let mut settings = state.settings.lock().unwrap().clone();
     let mut default_names = BTreeMap::new();
-    let mut ids: Vec<String> = vec!["claude".into(), "codex".into()];
+    let mut ids: Vec<String> = ai_usage_core::all_providers()
+        .iter()
+        .map(|p| p.id().to_string())
+        .collect();
     ids.extend(
         state
             .usage
@@ -219,7 +277,10 @@ fn get_settings(state: State<Snapshot>) -> SettingsView {
             .map(|p| p.provider.clone()),
     );
     for id in ids {
-        settings.providers.entry(id.clone()).or_default();
+        settings
+            .providers
+            .entry(id.clone())
+            .or_insert_with(|| bar::ProviderBar::default_for(&id));
         default_names.insert(id.clone(), bar::default_name(&id));
     }
     SettingsView {
@@ -366,10 +427,10 @@ fn set_widget_sessions(app: AppHandle, mode: widget::SessionsMode) -> Result<(),
 #[tauri::command]
 fn set_widget_provider(app: AppHandle, provider: String, show: bool) -> Result<(), String> {
     change_settings(&app, |s| {
-        let hidden = &mut s.widget.hidden_providers;
-        hidden.retain(|p| *p != provider);
-        if !show {
-            hidden.push(provider);
+        let shown = &mut s.widget.providers;
+        shown.retain(|p| *p != provider);
+        if show {
+            shown.push(provider);
         }
     })
     .map(|_| ())
@@ -504,21 +565,7 @@ fn set_language(app: AppHandle, language: String) -> Result<(), String> {
     change_settings(&app, |s| s.language = language)?;
     let snapshot = app.state::<Snapshot>();
     i18n::localize_usage(&mut snapshot.usage.lock().unwrap());
-    if let Some(menu) = snapshot.menu.lock().unwrap().as_ref() {
-        for (id, key) in [
-            ("show", "tray.toggle"),
-            ("refresh", "tray.refresh"),
-            ("quit", "tray.quit"),
-        ] {
-            if let Some(item) = menu.get(id).and_then(|i| i.as_menuitem().cloned()) {
-                let _ = item.set_text(t(key));
-            }
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = app.run_on_main_thread(xapp_tray::relabel);
-    }
+    relabel_menus(&app);
     update_tray(&app);
     let _ = app.emit("language-changed", ());
     Ok(())
@@ -539,6 +586,35 @@ fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
     change_settings(&app, |s| s.check_updates = enabled).map(|_| ())
 }
 
+/// Downloads, verifies and installs the new version, then restarts.
+/// Progress goes out as "update-progress" ([downloaded, total] bytes).
+/// Fails where in-place updates aren't possible (e.g. .deb/.rpm installs):
+/// the window then opens the release page instead.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| t("update.status_none").replace("{current}", updates::CURRENT))?;
+    let handle = app.clone();
+    let mut downloaded = 0usize;
+    update
+        .download_and_install(
+            move |chunk, total| {
+                downloaded += chunk;
+                let _ = handle.emit("update-progress", (downloaded, total));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
 #[tauri::command]
 fn open_update(app: AppHandle, state: State<Snapshot>) -> Result<(), String> {
     let url = state.update.lock().unwrap().as_ref().map(|u| u.url.clone());
@@ -548,9 +624,144 @@ fn open_update(app: AppHandle, state: State<Snapshot>) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Plays `sound` with the user's tone and volume, unless focus mode is on.
+fn alert_sound(settings: &Settings, sound: Sound) {
+    if !settings.mute.active() {
+        sound::play(settings.sound_tones.get(sound), settings.sound_volume);
+    }
+}
+
 #[tauri::command]
-fn preview_sound(sound: Sound) {
-    sound::play(sound);
+fn preview_sound(state: State<Snapshot>, sound: Sound) {
+    let settings = state.settings.lock().unwrap();
+    sound::play(settings.sound_tones.get(sound), settings.sound_volume);
+}
+
+#[tauri::command]
+fn set_sound_tone(app: AppHandle, sound: Sound, tone: sound::Tone) -> Result<(), String> {
+    change_settings(&app, |s| s.sound_tones.set(sound, tone))?;
+    sound::play(
+        tone,
+        app.state::<Snapshot>()
+            .settings
+            .lock()
+            .unwrap()
+            .sound_volume,
+    );
+    Ok(())
+}
+
+#[tauri::command]
+fn set_sound_volume(app: AppHandle, volume: u8) -> Result<(), String> {
+    change_settings(&app, |s| s.sound_volume = volume.min(100)).map(|_| ())
+}
+
+/// Focus mode: "off", minutes as a number, "tomorrow" (next 8:00) or "always".
+#[tauri::command]
+fn set_mute(app: AppHandle, mode: String) -> Result<Mute, String> {
+    let mute = mute_from(&mode)?;
+    change_settings(&app, |s| s.mute = mute)?;
+    mute_changed(&app);
+    Ok(mute)
+}
+
+fn mute_from(mode: &str) -> Result<Mute, String> {
+    use chrono::{Duration as Span, Local, NaiveTime, Utc};
+    Ok(match mode {
+        "off" => Mute::Off,
+        "always" => Mute::Always,
+        "tomorrow" => {
+            let morning = (Local::now() + Span::days(1))
+                .with_time(NaiveTime::from_hms_opt(8, 0, 0).unwrap())
+                .single()
+                .ok_or("invalid local time")?;
+            Mute::Until {
+                until: morning.with_timezone(&Utc),
+            }
+        }
+        minutes => Mute::Until {
+            until: Utc::now() + Span::minutes(minutes.parse::<i64>().map_err(|e| e.to_string())?),
+        },
+    })
+}
+
+/// Focus mode state last announced (`poll_sessions` notices it expiring).
+static WAS_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Tray menus, windows and API clients follow focus mode changes.
+fn mute_changed(app: &AppHandle) {
+    let mute = app.state::<Snapshot>().settings.lock().unwrap().mute;
+    WAS_MUTED.store(mute.active(), std::sync::atomic::Ordering::Relaxed);
+    relabel_menus(app);
+    update_tray(app);
+    let _ = app.emit("mute-updated", mute);
+    api::broadcast(app, "mute", &mute);
+}
+
+/// Turns the local API on/off or moves it to another port.
+#[tauri::command]
+fn set_api(app: AppHandle, enabled: bool, port: u16) -> Result<(), String> {
+    if port < 1024 {
+        return Err(t("api.port_invalid"));
+    }
+    api::configure(&app, enabled, port)?;
+    change_settings(&app, |s| {
+        s.api_enabled = enabled;
+        s.api_port = port;
+    })
+    .map(|_| ())
+}
+
+/// Label of a tray menu item in the current language and state.
+fn menu_text(app: &AppHandle, id: &str) -> String {
+    match id {
+        "show" => t("tray.toggle"),
+        "refresh" => t("tray.refresh"),
+        "mute" => {
+            if app
+                .state::<Snapshot>()
+                .settings
+                .lock()
+                .unwrap()
+                .mute
+                .active()
+            {
+                t("tray.unmute")
+            } else {
+                t("tray.mute_hour")
+            }
+        }
+        _ => t("tray.quit"),
+    }
+}
+
+/// Tray "mute" item: mutes for an hour, or unmutes when muted.
+fn toggle_mute(app: &AppHandle) {
+    let muted = app
+        .state::<Snapshot>()
+        .settings
+        .lock()
+        .unwrap()
+        .mute
+        .active();
+    let _ = set_mute(app.clone(), if muted { "off" } else { "60" }.into());
+}
+
+const MENU_IDS: [&str; 4] = ["show", "refresh", "mute", "quit"];
+
+fn relabel_menus(app: &AppHandle) {
+    if let Some(menu) = app.state::<Snapshot>().menu.lock().unwrap().as_ref() {
+        for id in MENU_IDS {
+            if let Some(item) = menu.get(id).and_then(|i| i.as_menuitem().cloned()) {
+                let _ = item.set_text(menu_text(app, id));
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || xapp_tray::relabel(&handle));
+    }
 }
 
 #[tauri::command]
@@ -571,8 +782,15 @@ fn poll_usage(app: &AppHandle) {
         &settings.alert_weekly,
     );
     if settings.sound_threshold && !alerts.is_empty() {
-        sound::play(Sound::Threshold);
+        alert_sound(&settings, Sound::Threshold);
     }
+    // Focus mode drops the alerts (they still count as given, so they
+    // don't all arrive at once when it ends).
+    let alerts = if settings.mute.active() {
+        Vec::new()
+    } else {
+        alerts
+    };
     for alert in alerts {
         let _ = app
             .notification()
@@ -584,9 +802,23 @@ fn poll_usage(app: &AppHandle) {
 
     update_tray(app);
     let _ = app.emit("usage-updated", &usage);
+    api::broadcast(app, "usage", &usage);
 }
 
 fn poll_sessions(app: &AppHandle) {
+    // A timed focus mode ends on its own: notice it here (every 2 s) so the
+    // tray mark and menu follow.
+    let muted = app
+        .state::<Snapshot>()
+        .settings
+        .lock()
+        .unwrap()
+        .mute
+        .active();
+    if WAS_MUTED.load(std::sync::atomic::Ordering::Relaxed) != muted {
+        mute_changed(app);
+    }
+
     let mut sessions = list_sessions();
     i18n::localize_sessions(&mut sessions);
     let snapshot = app.state::<Snapshot>();
@@ -607,8 +839,13 @@ fn poll_sessions(app: &AppHandle) {
             None
         };
     if let Some(sound) = sound {
-        sound::play(sound);
+        alert_sound(&settings, sound);
     }
+    let alerts = if settings.mute.active() {
+        Vec::new()
+    } else {
+        alerts
+    };
     for alert in alerts {
         let mut builder = app
             .notification()
@@ -630,6 +867,7 @@ fn poll_sessions(app: &AppHandle) {
     if changed {
         update_tray(app);
         let _ = app.emit("sessions-updated", &sessions);
+        api::broadcast(app, "sessions", &sessions);
     }
 }
 
@@ -663,14 +901,21 @@ fn update_tray(app: &AppHandle) {
         let usage = snapshot.usage.lock().unwrap();
         let sessions = snapshot.sessions.lock().unwrap();
         let settings = snapshot.settings.lock().unwrap();
-        bar::items(
+        let mut items = bar::items(
             &usage,
             &sessions,
             settings.bar_format,
             settings.bar_reset,
             &settings.providers,
             chrono::Utc::now(),
-        )
+        );
+        // Focus mode is easy to forget: mark the first item while it's on.
+        if settings.mute.active() {
+            if let Some(first) = items.first_mut() {
+                first.label = format!("🔕{}", first.label).trim_end().to_string();
+            }
+        }
+        items
     };
     // Tray icons are created and changed on the UI thread on every platform.
     let handle = app.clone();
@@ -754,10 +999,15 @@ fn toggle_window(app: &AppHandle) {
 }
 
 fn build_menu(app: &mut tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
-    let show = MenuItem::with_id(app, "show", t("tray.toggle"), true, None::<&str>)?;
-    let refresh = MenuItem::with_id(app, "refresh", t("tray.refresh"), true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", t("tray.quit"), true, None::<&str>)?;
-    Menu::with_items(app, &[&show, &refresh, &quit])
+    let items = MENU_IDS
+        .iter()
+        .map(|id| MenuItem::with_id(app, *id, menu_text(app.handle(), id), true, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items
+        .iter()
+        .map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>)
+        .collect();
+    Menu::with_items(app, &refs)
 }
 
 fn main() {
@@ -777,12 +1027,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![HIDDEN_ARG]),
         ))
         .manage(Snapshot::default())
         .manage(connect::Logins::default())
+        .manage(api::Api::default())
         .invoke_handler(tauri::generate_handler![
             get_usage,
             get_sessions,
@@ -814,16 +1066,33 @@ fn main() {
             connect::send_login_code,
             connect::cancel_login,
             connect::logout,
+            connect::set_openrouter_key,
+            connect::set_provider_enabled,
             connect::set_hooks,
             open_update,
+            install_update,
             set_sound_enabled,
             preview_sound,
+            set_sound_tone,
+            set_sound_volume,
+            set_mute,
+            set_api,
             refresh_now
         ])
         .setup(|app| {
             migrate::legacy_name(app.handle());
             let settings = Settings::load(app.handle());
             i18n::set_locale(&settings.language);
+            app.state::<Snapshot>()
+                .poller
+                .lock()
+                .unwrap()
+                .set_disabled(settings.disabled_providers.clone());
+            if settings.api_enabled {
+                if let Err(e) = api::configure(app.handle(), true, settings.api_port) {
+                    eprintln!("ai-usage: local API not started: {e}");
+                }
+            }
             *app.state::<Snapshot>().settings.lock().unwrap() = settings;
             migrate::repoint_hooks();
 
@@ -833,6 +1102,8 @@ fn main() {
                 xapp_tray::Actions {
                     toggle: toggle_window,
                     refresh: |app| refresh_now(app.clone()),
+                    mute: toggle_mute,
+                    label: menu_text,
                 },
             );
             #[cfg(not(target_os = "linux"))]
@@ -845,6 +1116,7 @@ fn main() {
             app.on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => toggle_window(app),
                 "refresh" => refresh_now(app.clone()),
+                "mute" => toggle_mute(app),
                 "quit" => app.exit(0),
                 _ => {}
             });

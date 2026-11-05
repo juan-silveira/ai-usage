@@ -125,7 +125,7 @@ input[type="range"] { width: 55%; accent-color: var(--ok); }
 .prefs p.muted { margin: 0; }
 .tab.gear { flex: 0 0 36px; font-size: 15px; padding: 0; }
 [hidden] { display: none !important; }
-#update-banner {
+#mute-banner, #update-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin: 8px 0 0; padding: 8px 12px; border-radius: 10px;
   background: color-mix(in srgb, var(--ok) 18%, var(--card)); font-size: 12px;
@@ -143,7 +143,7 @@ input[type="range"] { width: 55%; accent-color: var(--ok); }
 .conn .login { display: grid; gap: 6px; font-size: 12px; background: var(--bg); border-radius: 8px; padding: 8px; }
 .conn .login .line { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .conn .row { display: flex; gap: 6px; align-items: center; }
-.conn input[type="text"] {
+.conn input[type="text"], .conn input[type="password"] {
   flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 3px 6px; color: var(--text);
   background: var(--card); border: 1px solid var(--track); border-radius: 6px;
 }
@@ -158,3 +158,42 @@ input[type="color"] {
   border: 1px solid var(--track); border-radius: 6px; background: var(--bg);
 }
 input[type="color"].unset { opacity: .45; }
+#mute-banner { background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
+select.tone { max-width: 110px; }
+input.port {
+  width: 64px; font: inherit; font-size: 12px; padding: 3px 6px; text-align: right; color: var(--text);
+  background: var(--bg); border: 1px solid var(--track); border-radius: 6px;
+}
+#api-info code { font-size: 11px; }
+.conn > .muted { font-size: 11px; }
+.tab img { width: 15px; height: 15px; }
+.pref.wrap { flex-wrap: wrap; row-gap: 6px; }
+#widget-providers { flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------- Responsive ----------
+   The window opens at 360px but can be resized: wider, limits and sessions
+   become a grid and the preferences flow into columns; narrower, rows wrap. */
+.grid {
+  display: grid; column-gap: 10px; align-items: start;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+}
+.grid > p.muted { grid-column: 1 / -1; }
+#view-settings { columns: 340px; column-gap: 14px; }
+#view-settings .group { break-inside: avoid; display: flow-root; }
+#view-settings .group > h2.section:first-child { margin-top: 12px; }
+.pref { flex-wrap: wrap; }
+/* The label shrinks (to ~130px) before the control wraps to its own line,
+   which then stays right-aligned. */
+.pref > :first-child { flex: 1 1 130px; min-width: 0; }
+.pref > :last-child { margin-left: auto; }
+@media (min-width: 640px) {
+  body { padding: 14px 18px; }
+}
+/* Many providers in a narrow window: logos only in the tabs. */
+@media (max-width: 520px) {
+  #tabs.many .tab img + .name { display: none; }
+  #tabs.many .tab { padding: 0 5px; gap: 3px; }
+}
+.conn .login .row { justify-content: flex-start; }
+#tabs { scrollbar-width: none; }
+#tabs::-webkit-scrollbar { display: none; }

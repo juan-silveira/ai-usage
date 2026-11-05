@@ -206,7 +206,11 @@ fn print_table(usage: &[ProviderUsage]) {
             &[("time", &Local::now().format("%H:%M:%S"))]
         )
     );
-    for p in usage {
+    // Providers the user doesn't use would only add "not connected" noise.
+    for p in usage
+        .iter()
+        .filter(|p| !matches!(p.status, ProviderStatus::NoCredentials))
+    {
         let plan = p
             .plan
             .as_deref()

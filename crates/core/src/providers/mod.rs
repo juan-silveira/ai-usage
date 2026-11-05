@@ -1,5 +1,8 @@
 mod claude;
 mod codex;
+mod copilot;
+mod cursor;
+pub mod openrouter;
 
 use std::time::Duration;
 
@@ -9,6 +12,9 @@ use crate::model::{ProviderStatus, ProviderUsage};
 
 pub use claude::Claude;
 pub use codex::Codex;
+pub use copilot::Copilot;
+pub use cursor::Cursor;
+pub use openrouter::OpenRouter;
 
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
@@ -30,7 +36,13 @@ pub trait Provider: Send + Sync {
 }
 
 pub fn all_providers() -> Vec<Box<dyn Provider>> {
-    vec![Box::new(Claude), Box::new(Codex)]
+    vec![
+        Box::new(Claude),
+        Box::new(Codex),
+        Box::new(Copilot),
+        Box::new(Cursor),
+        Box::new(OpenRouter),
+    ]
 }
 
 pub(crate) fn http_agent() -> ureq::Agent {

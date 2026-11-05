@@ -166,10 +166,29 @@ pub fn window_label(w: &UsageWindow) -> String {
             Some(28..=31) => t("window.monthly"),
             Some(n) => tf("window.days", &[("n", &n)]),
         },
-        other => match other.strip_prefix("weekly_") {
-            Some(scope) => tf("window.weekly_scoped", &[("scope", &capitalize(scope))]),
-            None => w.label.clone(),
-        },
+        "credits" => t("window.credits"),
+        "key_limit" => t("window.key_limit"),
+        other => {
+            if let Some(scope) = other.strip_prefix("weekly_") {
+                tf("window.weekly_scoped", &[("scope", &scope_name(scope))])
+            } else if let Some(scope) = other.strip_prefix("monthly_") {
+                tf("window.monthly_scoped", &[("scope", &scope_name(scope))])
+            } else {
+                w.label.clone()
+            }
+        }
+    }
+}
+
+/// "on_demand" → translated "On-demand"; unknown scopes (e.g. Claude's
+/// per-model "opus") are just capitalized.
+fn scope_name(raw: &str) -> String {
+    let key = format!("scope.{raw}");
+    let name = t(&key);
+    if name == key {
+        capitalize(raw)
+    } else {
+        name
     }
 }
 

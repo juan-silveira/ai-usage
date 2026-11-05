@@ -2,13 +2,13 @@ const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
-const ICON = { claude: "icons/claude.png", codex: "icons/codex.png" };
+const ICON = { claude: "icons/claude.png", codex: "icons/codex.png", copilot: "icons/copilot.png", cursor: "icons/cursor.png", openrouter: "icons/openrouter.png" };
 let usage = [];
 let sessions = [];
 let levels = { session: [80, 95], weekly: [80, 95] };
 let sessionsMode = "summary";
-let hidden = [];
-const shown = (list) => list.filter((x) => !hidden.includes(x.provider));
+let visible = ["claude", "codex"];
+const shown = (list) => list.filter((x) => visible.includes(x.provider));
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -30,7 +30,9 @@ function left(iso) {
 
 function shortLabel(w) {
   if (w.key === "session") return t("short.session");
-  if (w.key !== "weekly") return w.key.replace(/^weekly_/, "").slice(0, 4);
+  if (w.key === "credits" || w.key === "key_limit") return "$";
+  // Scoped windows ("Weekly · Opus", "Monthly · Chat"): the scope, short.
+  if (w.key !== "weekly") return w.label.split("·").pop().trim().slice(0, 4);
   if (w.days == null || w.days === 7) return t("short.weekly");
   if (w.days >= 28 && w.days <= 31) return t("short.monthly");
   return t("short.days", { n: w.days });
@@ -47,12 +49,14 @@ function line(w) {
 }
 
 function render() {
-  const ok = shown(usage).filter((p) => p.status === "ok");
+  const ok = shown(usage).filter((p) => p.status === "ok" && p.windows.length);
   document.getElementById("rows").innerHTML = ok.length
     ? ok
         .map((p) => {
           // Session and weekly only: per-model weekly caps would crowd it.
-          const windows = p.windows.filter((w) => w.key === "session" || w.key === "weekly");
+          // Providers with neither (Copilot's monthly quotas) show their first two.
+          const main = p.windows.filter((w) => w.key === "session" || w.key === "weekly");
+          const windows = main.length ? main : p.windows.slice(0, 2);
           const icon = ICON[p.provider]
             ? `<img src="${ICON[p.provider]}" alt="${escapeHtml(p.display_name)}" />`
             : `<span>${escapeHtml(p.display_name.slice(0, 2))}</span>`;
@@ -117,7 +121,7 @@ function fit() {
 function applySettings(s) {
   levels = { session: s.alert_session, weekly: s.alert_weekly };
   sessionsMode = s.widget.sessions;
-  hidden = s.widget.hidden_providers ?? [];
+  visible = s.widget.providers ?? visible;
   document.getElementById("sessions").classList.toggle("list", sessionsMode === "list");
   const root = document.documentElement;
   root.style.setProperty("--bg-alpha", s.widget.opacity);

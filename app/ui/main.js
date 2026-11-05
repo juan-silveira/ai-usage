@@ -73,7 +73,9 @@ function renderProvider(p) {
 function renderLimits() {
   const root = document.getElementById("providers");
   if (latest.length === 0) return;
-  const shown = latest.filter((p) => activeTab === "all" || p.provider === activeTab);
+  const shown = latest.filter(
+    (p) => p.status !== "no_credentials" && (activeTab === "all" || p.provider === activeTab)
+  );
   root.innerHTML = shown.length
     ? shown.map(renderProvider).join("")
     : `<p class="muted">${escapeHtml(t("limits.none_for_provider"))}</p>`;
@@ -89,9 +91,14 @@ function peakPercent(p) {
     : null;
 }
 
+/** Providers with a sign-in (the rest only appear under Connections). */
+function connectedIds() {
+  return latest.filter((p) => p.status !== "no_credentials").map((p) => p.provider);
+}
+
 /** Providers known from either the usage poll or live sessions, in poll order. */
 function providerIds() {
-  const ids = latest.map((p) => p.provider);
+  const ids = connectedIds();
   for (const s of sessions) if (!ids.includes(s.provider)) ids.push(s.provider);
   return ids;
 }
@@ -99,10 +106,13 @@ function providerIds() {
 function renderTabs() {
   const ids = providerIds();
   if (activeTab !== "all" && activeTab !== "settings" && !ids.includes(activeTab) && latest.length) activeTab = "all";
-  const tab = (id, label, extra) => `
-    <button role="tab" class="tab" data-tab="${escapeHtml(id)}"
+  // Logo + name; with many providers in a narrow window the CSS hides the
+  // names (the tooltip and accessible label keep them).
+  document.getElementById("tabs").classList.toggle("many", ids.length > 2);
+  const tab = (id, label, extra, icon) => `
+    <button role="tab" class="tab" data-tab="${escapeHtml(id)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"
       aria-selected="${id === activeTab}" tabindex="${id === activeTab ? 0 : -1}">
-      ${escapeHtml(label)}${extra}
+      ${icon ? `<img src="${icon}" alt="" />` : ""}<span class="name">${escapeHtml(label)}</span>${extra}
     </button>`;
   const waiting = (id) =>
     sessions.filter((s) => s.state === "needs_input" && (id === "all" || s.provider === id)).length;
@@ -115,7 +125,7 @@ function renderTabs() {
         const usage = latest.find((p) => p.provider === id);
         const pct = peakPercent(usage);
         const pctBadge = pct == null ? "" : `<span class="pct ${worstSeverity(usage)}">${pct.toFixed(0)}%</span>`;
-        return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)));
+        return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)), PROVIDER_ICON[id]);
       })
       .join("") +
     `<button role="tab" class="tab gear" data-tab="settings" title="${escapeHtml(t("tabs.settings"))}" aria-label="${escapeHtml(t("tabs.settings"))}"
@@ -151,7 +161,7 @@ document.getElementById("tabs").addEventListener("keydown", (e) => {
   selectTab(ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length]);
 });
 
-const PROVIDER_NAME = { claude: "Claude", codex: "Codex" };
+const PROVIDER_NAME = { claude: "Claude", codex: "Codex", copilot: "Copilot", cursor: "Cursor", openrouter: "OpenRouter" };
 
 function ago(iso) {
   const secs = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
@@ -207,6 +217,7 @@ listen("usage-updated", (event) => {
   render();
   // Don't rebuild the form under the user's cursor while they type a name.
   if (!document.getElementById("provider-bar").contains(document.activeElement)) renderProviderBar();
+  renderWidgetProviders();
 });
 
 document.getElementById("refresh").addEventListener("click", () => invoke("refresh_now"));
@@ -230,7 +241,7 @@ document.querySelectorAll("[data-preview]").forEach((btn) =>
   btn.addEventListener("click", () => invoke("preview_sound", { sound: btn.dataset.preview }))
 );
 
-const PROVIDER_ICON = { claude: "icons/claude.png", codex: "icons/codex.png" };
+const PROVIDER_ICON = { claude: "icons/claude.png", codex: "icons/codex.png", copilot: "icons/copilot.png", cursor: "icons/cursor.png", openrouter: "icons/openrouter.png" };
 let barSettings = null;
 
 /** Mirrors bar.rs so the preview matches what the panel will show. */
@@ -274,7 +285,9 @@ function barPreview(id, cfg) {
 function renderProviderBar() {
   if (!barSettings) return;
   const off = barSettings.bar_format === "off";
+  const ids = connectedIds();
   document.getElementById("provider-bar").innerHTML = Object.entries(barSettings.providers)
+    .filter(([id]) => ids.includes(id))
     .map(([id, cfg]) => {
       const usage = latest.find((p) => p.provider === id);
       const label = usage?.display_name ?? PROVIDER_NAME[id] ?? id;
@@ -360,7 +373,25 @@ function showUpdate(status) {
       ? t("update.status_available", { current, version: u.version })
       : t("update.status_none", { current });
 }
-document.getElementById("update-open").addEventListener("click", () => invoke("open_update"));
+// Installs in place (signed bundle, then restart); where that isn't possible
+// (e.g. .deb/.rpm installs) the release page opens instead.
+const updateOpen = document.getElementById("update-open");
+updateOpen.addEventListener("click", async () => {
+  updateOpen.disabled = true;
+  try {
+    await invoke("install_update");
+  } catch (err) {
+    console.warn("in-place update failed", err);
+    document.getElementById("update-text").textContent = t("update.install_failed");
+    invoke("open_update");
+  }
+  updateOpen.disabled = false;
+});
+listen("update-progress", (e) => {
+  const [done, total] = e.payload;
+  if (total) document.getElementById("update-text").textContent =
+    t("update.downloading", { pct: Math.round((done / total) * 100) });
+});
 document.getElementById("check-now").addEventListener("click", async () => {
   updateStatus.textContent = t("update.checking");
   showUpdate(await invoke("check_updates_now"));
@@ -377,8 +408,13 @@ pollMinutes.addEventListener("change", () => {
 
 const checkUpdates = document.getElementById("check-updates");
 checkUpdates.addEventListener("change", () => invoke("set_check_updates", { enabled: checkUpdates.checked }));
-listen("update-status", (e) => showUpdate({ current: "", update: e.payload, error: null }));
-invoke("get_update").then(showUpdate);
+// The periodic check only sends the update found; keep the version we know.
+let currentVersion = "";
+listen("update-status", (e) => showUpdate({ current: currentVersion, update: e.payload, error: null }));
+invoke("get_update").then((status) => {
+  currentVersion = status.current;
+  showUpdate(status);
+});
 
 const widgetEnabled = document.getElementById("widget-enabled");
 const widgetMove = document.getElementById("widget-move");
@@ -432,6 +468,8 @@ invoke("get_usage").then((usage) => {
   latest = usage;
   render();
   renderProviderBar();
+  renderWidgetProviders();
+  renderConnections();
 });
 
 // ---------- Theme ----------
@@ -474,9 +512,10 @@ function renderConnections() {
   const root = document.getElementById("connections");
   if (!connections.length) return;
   if (root.contains(document.activeElement) && document.activeElement.tagName === "INPUT"
-      && document.activeElement.type === "text") return; // don't wipe a code being typed
+      && ["text", "password"].includes(document.activeElement.type)) return; // don't wipe a code or key being typed
   root.innerHTML = connections
     .map((c) => {
+      if (c.kind !== "cli") return renderOtherConnection(c);
       const st = connStatus(c.provider);
       const icon = PROVIDER_ICON[c.provider];
       const login = loginState[c.provider] ?? {};
@@ -541,6 +580,53 @@ function renderConnections() {
     .join("");
 }
 
+/** Providers signed in elsewhere (Copilot, Cursor) or with an API key (OpenRouter). */
+function renderOtherConnection(c) {
+  const st = c.disabled ? { text: t("conn.disabled"), cls: "bad" } : connStatus(c.provider);
+  const icon = PROVIDER_ICON[c.provider];
+  const login = loginState[c.provider] ?? {};
+  // Copilot/Cursor: "disconnect" stops tracking here, their sign-in stays.
+  let action = "";
+  if (c.kind === "app") {
+    if (c.disabled) action = `<button class="text" data-act="enable">${escapeHtml(t("conn.connect"))}</button>`;
+    else if (st.cls === "ok") action = `<button class="text" data-act="disable">${escapeHtml(t("conn.disconnect"))}</button>`;
+  }
+  const confirm = login.confirmDisable
+    ? `<div class="login">
+        <span>${escapeHtml(t("conn.app_disconnect_confirm", { name: c.name }))}</span>
+        <div class="row">
+          <button class="text" data-act="disable-confirm">${escapeHtml(t("conn.disconnect"))}</button>
+          <button class="text" data-act="logout-cancel">${escapeHtml(t("conn.cancel"))}</button>
+        </div>
+      </div>`
+    : "";
+  let extra;
+  if (c.kind === "key") {
+    extra = c.key_source === "env"
+      ? `<span class="muted">${escapeHtml(t("conn.key_from_env"))}</span>`
+      : `<div class="row">
+          <input type="password" data-field="key" autocomplete="off"
+            placeholder="${escapeHtml(t(c.key_source ? "conn.key_saved" : "conn.key_placeholder"))}" />
+          <button class="text" data-act="save-key">${escapeHtml(t("conn.save"))}</button>
+          ${c.key_source ? `<button class="text" data-act="remove-key">${escapeHtml(t("conn.remove"))}</button>` : ""}
+        </div>`;
+  } else {
+    extra = `<span class="muted">${escapeHtml(t(`conn.hint.${c.provider}`))}</span>`;
+  }
+  return `
+    <div class="conn" data-provider="${escapeHtml(c.provider)}">
+      <div class="head">
+        <div class="who">
+          ${icon ? `<img src="${icon}" alt="" />` : ""}
+          <div><div class="name">${escapeHtml(c.name)}</div>
+          <div class="state ${st.cls}">${escapeHtml(st.text)}</div></div>
+        </div>
+        ${action}
+      </div>
+      ${confirm}${c.disabled ? "" : extra}
+    </div>`;
+}
+
 async function loadConnections() {
   connections = await invoke("get_connections");
   renderConnections();
@@ -559,6 +645,20 @@ document.getElementById("connections").addEventListener("click", async (e) => {
     } catch (err) {
       loginState[provider] = { result: false, line: String(err) };
     }
+    await loadConnections();
+  } else if (act === "disable") {
+    loginState[provider] = { confirmDisable: true };
+    renderConnections();
+  } else if (act === "disable-confirm" || act === "enable") {
+    loginState[provider] = {};
+    await invoke("set_provider_enabled", { provider, enabled: act === "enable" });
+    await loadConnections();
+  } else if (act === "save-key" || act === "remove-key") {
+    const input = row.querySelector('[data-field="key"]');
+    const key = act === "save-key" ? input.value.trim() : "";
+    if (act === "save-key" && !key) return;
+    await invoke("set_openrouter_key", { key });
+    input.value = "";
     await loadConnections();
   } else if (act === "logout") {
     loginState[provider] = { confirmLogout: true };
@@ -663,22 +763,126 @@ language.value = I18N.setting;
 // The backend emits "language-changed", which reloads this page (i18n.js).
 language.addEventListener("change", () => invoke("set_language", { language: language.value }));
 
-// Providers shown in the widget (all unless unticked here).
+// Providers shown in the widget.
 const widgetProviders = document.getElementById("widget-providers");
-let widgetHidden = [];
+let widgetShown = [];
 function renderWidgetProviders() {
-  widgetProviders.innerHTML = ["claude", "codex", ...providerIds()]
-    .filter((id, i, all) => all.indexOf(id) === i)
-    .map((id) => `<label><input type="checkbox" data-provider="${escapeHtml(id)}" ${widgetHidden.includes(id) ? "" : "checked"} />
+  widgetProviders.innerHTML = connectedIds()
+    .map((id) => `<label><input type="checkbox" data-provider="${escapeHtml(id)}" ${widgetShown.includes(id) ? "checked" : ""} />
       ${PROVIDER_ICON[id] ? `<img src="${PROVIDER_ICON[id]}" alt="" />` : ""}${escapeHtml(PROVIDER_NAME[id] ?? id)}</label>`)
     .join("");
 }
 widgetProviders.addEventListener("change", (e) => {
   const id = e.target.dataset.provider;
-  widgetHidden = widgetHidden.filter((p) => p !== id).concat(e.target.checked ? [] : [id]);
+  widgetShown = widgetShown.filter((p) => p !== id).concat(e.target.checked ? [id] : []);
   invoke("set_widget_provider", { provider: id, show: e.target.checked });
 });
 invoke("get_settings").then((s) => {
-  widgetHidden = s.widget.hidden_providers;
+  widgetShown = s.widget.providers;
   renderWidgetProviders();
+});
+
+// ---------- Focus mode ----------
+const muteSelect = document.getElementById("mute");
+const muteStatus = document.getElementById("mute-status");
+const muteBanner = document.getElementById("mute-banner");
+for (const opt of muteSelect.options)
+  if (/^\d+$/.test(opt.value))
+    opt.textContent = Number(opt.value) < 60
+      ? t("polling.minutes", { n: opt.value })
+      : t("focus.hours", { n: opt.value / 60 });
+let mute = { mode: "off" };
+
+function muteActive() {
+  return mute.mode === "always" || (mute.mode === "until" && new Date(mute.until) > Date.now());
+}
+
+function muteText() {
+  if (mute.mode === "always") return t("focus.muted");
+  const at = new Date(mute.until);
+  const sameDay = at.toDateString() === new Date().toDateString();
+  return t("focus.muted_until", { when: sameDay ? hhmm(at) : `${weekdayShort(at)} ${hhmm(at)}` });
+}
+
+function renderMute() {
+  const on = muteActive();
+  muteBanner.hidden = !on;
+  muteStatus.hidden = !on;
+  if (on) document.getElementById("mute-text").textContent = muteStatus.textContent = `🔕 ${muteText()}`;
+  // While muted the select shows the state ("Muted until 15:30") through a
+  // hidden option; picking any real option changes it.
+  let current = muteSelect.querySelector('option[value="current"]');
+  if (!current) {
+    current = new Option("", "current");
+    current.hidden = true;
+    muteSelect.prepend(current);
+  }
+  current.textContent = on ? muteText() : "";
+  muteSelect.value = on ? "current" : "off";
+}
+
+muteSelect.addEventListener("change", async () => {
+  mute = await invoke("set_mute", { mode: muteSelect.value });
+  renderMute();
+});
+document.getElementById("mute-off").addEventListener("click", async () => {
+  mute = await invoke("set_mute", { mode: "off" });
+  renderMute();
+});
+listen("mute-updated", (e) => {
+  mute = e.payload;
+  renderMute();
+});
+setInterval(renderMute, 30_000);
+
+// ---------- Sounds: tone per alert and volume ----------
+const TONES = ["bell", "chime", "soft", "ping", "pulse"];
+const toneSelects = document.querySelectorAll("select.tone");
+toneSelects.forEach((sel) => {
+  sel.innerHTML = TONES.map((tone) => `<option value="${tone}">${escapeHtml(t(`tone.${tone}`))}</option>`).join("");
+  sel.addEventListener("change", () => invoke("set_sound_tone", { sound: sel.dataset.sound, tone: sel.value }));
+});
+const soundVolume = document.getElementById("sound-volume");
+soundVolume.addEventListener("change", () => {
+  invoke("set_sound_volume", { volume: Number(soundVolume.value) });
+  invoke("preview_sound", { sound: "done" });
+});
+
+invoke("get_settings").then((s) => {
+  mute = s.mute;
+  renderMute();
+  toneSelects.forEach((sel) => (sel.value = s.sound_tones[sel.dataset.sound]));
+  soundVolume.value = s.sound_volume;
+});
+
+// ---------- Local API ----------
+const apiEnabled = document.getElementById("api-enabled");
+const apiPort = document.getElementById("api-port");
+const apiInfo = document.getElementById("api-info");
+let apiError = "";
+function renderApi() {
+  apiPort.disabled = !apiEnabled.checked;
+  const base = `http://127.0.0.1:${apiPort.value}`;
+  apiInfo.innerHTML = apiError
+    ? escapeHtml(t("api.error", { error: apiError }))
+    : apiEnabled.checked
+      ? escapeHtml(t("api.running")) + ` <code>${base}/v1/status</code> · <code>/v1/usage</code> · <code>/v1/sessions</code> · <code>/v1/events</code>`
+      : escapeHtml(t("api.note"));
+}
+async function saveApi() {
+  try {
+    await invoke("set_api", { enabled: apiEnabled.checked, port: Number(apiPort.value) || 0 });
+    apiError = "";
+  } catch (err) {
+    apiError = String(err);
+    if (apiEnabled.checked) apiEnabled.checked = false;
+  }
+  renderApi();
+}
+apiEnabled.addEventListener("change", saveApi);
+apiPort.addEventListener("change", saveApi);
+invoke("get_settings").then((s) => {
+  apiEnabled.checked = s.api_enabled;
+  apiPort.value = s.api_port;
+  renderApi();
 });

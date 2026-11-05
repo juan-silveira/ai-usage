@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(t.update(&waiting, t0).len(), 1);
         assert!(t.update(&waiting, t0 + Duration::from_secs(60)).is_empty());
         let a = t.update(&waiting, t0 + REMINDER_EVERY);
-        assert!(a[0].title.starts_with("Lembrete"));
+        assert_eq!(a[0].title, tf("alert.reminder", &[("name", &"Claude")]));
 
         t.acknowledge("claude-s");
         assert!(t.update(&waiting, t0 + REMINDER_EVERY * 3).is_empty());

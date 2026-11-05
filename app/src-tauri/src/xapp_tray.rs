@@ -32,6 +32,9 @@ type SetBoolFn = unsafe extern "C" fn(*mut c_void, c_int);
 pub struct Actions {
     pub toggle: fn(&AppHandle),
     pub refresh: fn(&AppHandle),
+    pub mute: fn(&AppHandle),
+    /// Text of a menu item by id, in the current language and state.
+    pub label: fn(&AppHandle, &str) -> String,
 }
 
 struct Api {
@@ -103,18 +106,18 @@ unsafe fn load() -> Result<Api, Box<dyn std::error::Error>> {
     })
 }
 
-/// Translation keys of the right-click menu items, in order.
-const MENU_KEYS: [&str; 3] = ["tray.toggle", "tray.refresh", "tray.quit"];
+/// Right-click menu item ids, in order.
+const MENU_IDS: [&str; 4] = ["show", "refresh", "mute", "quit"];
 
-/// Re-reads the menu labels after a language change.
-pub fn relabel() {
+/// Re-reads the menu labels (language or focus mode changed).
+pub fn relabel(app: &AppHandle) {
     STATE.with(|s| {
         let s = s.borrow();
         let Some(state) = s.as_ref() else { return };
         for icon in &state.icons {
-            for (item, key) in icon.menu.children().iter().zip(MENU_KEYS) {
+            for (item, id) in icon.menu.children().iter().zip(MENU_IDS) {
                 if let Some(item) = item.downcast_ref::<gtk::MenuItem>() {
-                    item.set_label(&ai_usage_core::i18n::t(key));
+                    item.set_label(&(state.actions.label)(app, id));
                 }
             }
         }
@@ -158,12 +161,13 @@ impl State {
         (self.api.set_name)(raw, name.as_ptr());
 
         let menu = gtk::Menu::new();
-        for (key, action) in [
-            (MENU_KEYS[0], self.actions.toggle),
-            (MENU_KEYS[1], self.actions.refresh),
-            (MENU_KEYS[2], |app: &AppHandle| app.exit(0)),
-        ] {
-            let item = gtk::MenuItem::with_label(&ai_usage_core::i18n::t(key));
+        for (id, action) in MENU_IDS.into_iter().zip([
+            self.actions.toggle,
+            self.actions.refresh,
+            self.actions.mute,
+            |app: &AppHandle| app.exit(0),
+        ]) {
+            let item = gtk::MenuItem::with_label(&(self.actions.label)(&self.app, id));
             let app = self.app.clone();
             item.connect_activate(move |_| action(&app));
             menu.append(&item);

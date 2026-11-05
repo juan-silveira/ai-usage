@@ -38,6 +38,9 @@ pub struct Poller {
     providers: Vec<Box<dyn Provider>>,
     state: HashMap<String, ProviderState>,
     cache: Option<PathBuf>,
+    /// Providers turned off by the user: reported as not connected, never
+    /// fetched.
+    disabled: Vec<String>,
 }
 
 impl Default for Poller {
@@ -57,6 +60,7 @@ impl Poller {
             providers,
             state: HashMap::new(),
             cache: None,
+            disabled: Vec::new(),
         }
     }
 
@@ -67,6 +71,9 @@ impl Poller {
         let results = providers
             .iter()
             .map(|p| {
+                if self.disabled.iter().any(|d| d == p.id()) {
+                    return off(p.as_ref());
+                }
                 let state = self.state.entry(p.id().to_string()).or_default();
                 let fresh = state.last_ok.as_ref().filter(|last| {
                     now - last.fetched_at < Duration::seconds(MIN_FETCH_INTERVAL_SECS)
@@ -82,6 +89,11 @@ impl Poller {
         self.providers = providers;
         self.save_cache();
         results
+    }
+
+    /// Providers to skip (the user disconnected them in the app).
+    pub fn set_disabled(&mut self, providers: Vec<String>) {
+        self.disabled = providers;
     }
 
     /// Drops what is known about a provider (after signing out), so the next
@@ -128,6 +140,18 @@ impl Poller {
                 let _ = std::fs::rename(tmp, path);
             }
         }
+    }
+}
+
+/// A disabled provider: shown as not connected, without a request.
+fn off(p: &dyn Provider) -> ProviderUsage {
+    ProviderUsage {
+        provider: p.id().to_string(),
+        display_name: p.display_name().to_string(),
+        plan: None,
+        fetched_at: Utc::now(),
+        status: ProviderStatus::NoCredentials,
+        stale: None,
     }
 }
 

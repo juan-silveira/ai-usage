@@ -1,8 +1,8 @@
 //! Checks GitHub Releases for a newer version of the app.
 //!
-//! This only detects and announces updates (banner + notification with a
-//! download link). Installing in place needs signed release bundles; that is
-//! the job of tauri-plugin-updater once releases are built by CI.
+//! This detects and announces updates (banner + notification). Installing
+//! is done by tauri-plugin-updater (`install_update` in main.rs) from the
+//! signed bundles CI attaches to each release.
 
 use std::time::Duration;
 

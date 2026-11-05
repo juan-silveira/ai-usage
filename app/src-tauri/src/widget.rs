@@ -32,9 +32,9 @@ pub struct WidgetSettings {
     pub color: Option<String>,
     #[serde(default)]
     pub sessions: SessionsMode,
-    /// Provider ids left out of the widget (usage rows and sessions).
-    #[serde(default)]
-    pub hidden_providers: Vec<String>,
+    /// Provider ids shown in the widget (usage rows and sessions).
+    #[serde(default = "default_providers")]
+    pub providers: Vec<String>,
 }
 
 /// How live sessions appear in the widget.
@@ -56,6 +56,10 @@ pub fn valid_color(color: &str) -> Option<String> {
         .then(|| format!("#{}", hex.to_ascii_lowercase()))
 }
 
+fn default_providers() -> Vec<String> {
+    crate::bar::SHOWN_BY_DEFAULT.map(String::from).to_vec()
+}
+
 fn default_opacity() -> f64 {
     0.55
 }
@@ -69,7 +73,7 @@ impl Default for WidgetSettings {
             y: None,
             color: None,
             sessions: SessionsMode::default(),
-            hidden_providers: Vec::new(),
+            providers: default_providers(),
         }
     }
 }

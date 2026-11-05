@@ -12,20 +12,27 @@
       <button id="refresh" data-i18n-title="app.refresh">↻</button>
     </header>
     <nav id="tabs" role="tablist" data-i18n-aria-label="tabs.label"></nav>
+    <div id="mute-banner" hidden>
+      <span id="mute-text"></span>
+      <button id="mute-off" class="text" data-i18n="focus.unmute"></button>
+    </div>
     <div id="update-banner" hidden>
       <span id="update-text"></span>
-      <button id="update-open" class="text" data-i18n="update.download"></button>
+      <button id="update-open" class="text" data-i18n="update.install"></button>
     </div>
     <div id="view-usage">
     <h2 class="section" data-i18n="section.sessions"></h2>
-    <section id="sessions"><p class="muted" data-i18n="sessions.none"></p></section>
+    <section id="sessions" class="grid"><p class="muted" data-i18n="sessions.none"></p></section>
     <h2 class="section" data-i18n="section.limits"></h2>
-    <main id="providers"><p class="muted" data-i18n="app.loading"></p></main>
+    <main id="providers" class="grid"><p class="muted" data-i18n="app.loading"></p></main>
     <footer id="updated" class="muted"></footer>
     </div>
     <div id="view-settings" hidden>
+    <div class="group">
     <h2 class="section" data-i18n="section.connections"></h2>
     <section class="card prefs" id="connections"><p class="muted" data-i18n="app.loading"></p></section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.general"></h2>
     <section class="card prefs">
       <div class="pref">
@@ -44,6 +51,8 @@
         </select>
       </label>
     </section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.polling"></h2>
     <section class="card prefs">
       <label class="pref">
@@ -58,6 +67,8 @@
       </label>
       <p class="muted" data-i18n="polling.note"></p>
     </section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.bar"></h2>
     <section class="card prefs">
       <label class="pref">
@@ -80,8 +91,22 @@
       <div id="provider-bar"></div>
 
     </section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.alerts"></h2>
     <section class="card prefs">
+      <label class="pref">
+        <span data-i18n="focus.label"></span>
+        <select id="mute">
+          <option value="off" data-i18n="focus.off"></option>
+          <option value="30"></option>
+          <option value="60"></option>
+          <option value="120"></option>
+          <option value="tomorrow" data-i18n="focus.tomorrow"></option>
+          <option value="always" data-i18n="focus.always"></option>
+        </select>
+      </label>
+      <p class="muted" id="mute-status" hidden></p>
       <label class="pref">
         <span data-i18n="alerts.session"></span>
         <input type="text" class="levels" data-window="session" inputmode="numeric" placeholder="80, 95" />
@@ -93,24 +118,39 @@
       <p class="muted" data-i18n="alerts.note"></p>
       <div class="pref">
         <label><input type="checkbox" id="sound-needs-input" /> <span data-i18n="alerts.sound_needs_input"></span></label>
-        <button class="small" data-preview="needs_input" data-i18n-title="alerts.listen">▶</button>
+        <span class="row-inline">
+          <select class="tone" data-sound="needs_input"></select>
+          <button class="small" data-preview="needs_input" data-i18n-title="alerts.listen">▶</button>
+        </span>
       </div>
       <div class="pref">
         <label><input type="checkbox" id="sound-done" /> <span data-i18n="alerts.sound_done"></span></label>
-        <button class="small" data-preview="done" data-i18n-title="alerts.listen">▶</button>
+        <span class="row-inline">
+          <select class="tone" data-sound="done"></select>
+          <button class="small" data-preview="done" data-i18n-title="alerts.listen">▶</button>
+        </span>
       </div>
       <div class="pref">
         <label><input type="checkbox" id="sound-threshold" /> <span data-i18n="alerts.sound_threshold"></span></label>
-        <button class="small" data-preview="threshold" data-i18n-title="alerts.listen">▶</button>
+        <span class="row-inline">
+          <select class="tone" data-sound="threshold"></select>
+          <button class="small" data-preview="threshold" data-i18n-title="alerts.listen">▶</button>
+        </span>
       </div>
+      <label class="pref">
+        <span data-i18n="alerts.volume"></span>
+        <input type="range" id="sound-volume" min="0" max="100" step="5" />
+      </label>
     </section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.widget"></h2>
     <section class="card prefs">
       <div class="pref">
         <label><input type="checkbox" id="widget-enabled" /> <span data-i18n="widget.enabled"></span></label>
         <button id="widget-move" class="text"></button>
       </div>
-      <div class="pref">
+      <div class="pref wrap">
         <span data-i18n="widget.providers"></span>
         <span class="row-inline" id="widget-providers"></span>
       </div>
@@ -135,6 +175,18 @@
       </label>
       <p class="muted" data-i18n="widget.note"></p>
     </section>
+    </div>
+    <div class="group">
+    <h2 class="section" data-i18n="section.api"></h2>
+    <section class="card prefs">
+      <div class="pref">
+        <label><input type="checkbox" id="api-enabled" /> <span data-i18n="api.enabled"></span></label>
+        <input type="text" id="api-port" inputmode="numeric" maxlength="5" class="port" data-i18n-title="api.port" />
+      </div>
+      <p class="muted" id="api-info"></p>
+    </section>
+    </div>
+    <div class="group">
     <h2 class="section" data-i18n="section.updates"></h2>
     <section class="card prefs">
       <div class="pref">
@@ -143,6 +195,7 @@
       </div>
       <p class="muted" id="update-status"></p>
     </section>
+    </div>
     </div>
     <script src="i18n.js" data-main="main.js"></script>
   </body>

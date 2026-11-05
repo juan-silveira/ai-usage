@@ -57,11 +57,26 @@ fn agent(id: &str) -> Result<&'static Agent, String> {
 pub struct Connection {
     provider: &'static str,
     name: &'static str,
+    /// "cli": signs in through the agent's CLI and can install hooks;
+    /// "app": uses another app's sign-in (nothing to do here);
+    /// "key": needs an API key typed in the app.
+    kind: &'static str,
     cli_path: Option<PathBuf>,
     install_command: &'static str,
     hooks_installed: bool,
     login_running: bool,
+    /// For "key": where the key comes from ("env" or "file"), if any.
+    key_source: Option<&'static str>,
+    /// Turned off in the app ("app" kind only).
+    disabled: bool,
 }
+
+/// Providers without a CLI sign-in of their own: (id, name, kind).
+const OTHERS: &[(&str, &str, &str)] = &[
+    ("copilot", "GitHub Copilot", "app"),
+    ("cursor", "Cursor", "app"),
+    ("openrouter", "OpenRouter", "key"),
+];
 
 #[derive(Default)]
 pub struct Logins(Mutex<HashMap<String, (Child, ChildStdin)>>);
@@ -70,18 +85,38 @@ pub struct Logins(Mutex<HashMap<String, (Child, ChildStdin)>>);
 pub fn get_connections(app: AppHandle) -> Vec<Connection> {
     let logins = app.state::<Logins>();
     let running = logins.0.lock().unwrap();
-    AGENTS
-        .iter()
-        .map(|a| Connection {
-            provider: a.id,
-            name: a.name,
-            cli_path: cli_locate::find(a.cli),
-            install_command: a.install,
-            hooks_installed: hook_install::target(a.id)
-                .is_some_and(|t| hook_install::is_installed(&t)),
-            login_running: running.contains_key(a.id),
-        })
-        .collect()
+    let disabled = app
+        .state::<crate::Snapshot>()
+        .settings
+        .lock()
+        .unwrap()
+        .disabled_providers
+        .clone();
+    let agents = AGENTS.iter().map(|a| Connection {
+        provider: a.id,
+        name: a.name,
+        kind: "cli",
+        cli_path: cli_locate::find(a.cli),
+        install_command: a.install,
+        hooks_installed: hook_install::target(a.id).is_some_and(|t| hook_install::is_installed(&t)),
+        login_running: running.contains_key(a.id),
+        key_source: None,
+        disabled: false,
+    });
+    let others = OTHERS.iter().map(|&(id, name, kind)| Connection {
+        provider: id,
+        name,
+        kind,
+        cli_path: None,
+        install_command: "",
+        hooks_installed: false,
+        login_running: false,
+        key_source: (id == "openrouter")
+            .then(ai_usage_core::providers::openrouter::key_source)
+            .flatten(),
+        disabled: disabled.iter().any(|d| d == id),
+    });
+    agents.chain(others).collect()
 }
 
 #[derive(Clone, Serialize)]
@@ -224,6 +259,40 @@ pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
             err
         })
     }
+}
+
+/// Stops or resumes tracking a provider that signs in elsewhere (Copilot,
+/// Cursor). Their own sign-in is not touched: signing out of `gh` would
+/// break the GitHub CLI, and out of Cursor, the editor.
+#[tauri::command]
+pub fn set_provider_enabled(app: AppHandle, provider: String, enabled: bool) -> Result<(), String> {
+    let disabled = crate::change_settings(&app, |s| {
+        s.disabled_providers.retain(|p| *p != provider);
+        if !enabled {
+            s.disabled_providers.push(provider.clone());
+        }
+    })?
+    .disabled_providers;
+    let snapshot = app.state::<crate::Snapshot>();
+    let mut poller = snapshot.poller.lock().unwrap();
+    poller.set_disabled(disabled);
+    poller.forget(&provider);
+    drop(poller);
+    crate::refresh_now(app);
+    Ok(())
+}
+
+/// Saves the OpenRouter API key (an empty one removes it) and checks it now.
+#[tauri::command]
+pub fn set_openrouter_key(app: AppHandle, key: String) -> Result<(), String> {
+    ai_usage_core::providers::openrouter::save_key(&key).map_err(|e| e.to_string())?;
+    app.state::<crate::Snapshot>()
+        .poller
+        .lock()
+        .unwrap()
+        .forget("openrouter");
+    crate::refresh_now(app);
+    Ok(())
 }
 
 /// Turns live session hooks on or off. The hooks run this app's own
