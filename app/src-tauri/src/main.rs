@@ -461,12 +461,15 @@ fn poll_sessions(app: &AppHandle) {
         sound::play(sound);
     }
     for alert in alerts {
-        let _ = app
+        let mut builder = app
             .notification()
             .builder()
             .title(alert.title)
-            .body(alert.body)
-            .show();
+            .body(alert.body);
+        if let Some(icon) = notification_icon(alert.kind) {
+            builder = builder.icon(icon);
+        }
+        let _ = builder.show();
     }
 
     let changed = {
@@ -479,6 +482,30 @@ fn poll_sessions(app: &AppHandle) {
         update_tray(app);
         let _ = app.emit("sessions-updated", &sessions);
     }
+}
+
+/// Path of the notification icon for an alert: a warning triangle when a
+/// session needs the user, a green check when it finished. Written to the
+/// temp dir once, since notification daemons take a file path.
+fn notification_icon(kind: AlertKind) -> Option<String> {
+    static FILES: std::sync::OnceLock<Option<(String, String)>> = std::sync::OnceLock::new();
+    let files = FILES.get_or_init(|| {
+        let dir = std::env::temp_dir();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = dir.join(format!("ia-usage-{}-{name}.png", std::process::id()));
+            std::fs::write(&path, bytes).ok()?;
+            Some(path.to_string_lossy().into_owned())
+        };
+        Some((
+            write("attention", include_bytes!("../icons/notify/attention.png"))?,
+            write("done", include_bytes!("../icons/notify/done.png"))?,
+        ))
+    });
+    let (attention, done) = files.as_ref()?;
+    Some(match kind {
+        AlertKind::NeedsInput => attention.clone(),
+        AlertKind::Done => done.clone(),
+    })
 }
 
 fn update_tray(app: &AppHandle) {
