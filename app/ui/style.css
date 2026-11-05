@@ -148,3 +148,9 @@ input[type="range"] { width: 55%; accent-color: var(--ok); }
 }
 .conn code { font-size: 11px; background: var(--bg); padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 a { color: var(--ok); }
+.row-inline { display: inline-flex; align-items: center; gap: 6px; }
+input[type="color"] {
+  width: 34px; height: 24px; padding: 0 2px; cursor: pointer;
+  border: 1px solid var(--track); border-radius: 6px; background: var(--bg);
+}
+input[type="color"].unset { opacity: .45; }

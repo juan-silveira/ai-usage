@@ -75,3 +75,15 @@ body.moving #widget {
 #move-hint { display: none; font-size: 10px; color: var(--muted); text-align: center; }
 body.moving #move-hint { display: block; }
 .empty { color: var(--muted); font-size: 11px; }
+#sessions.list { display: grid; gap: 2px; border-top: 1px solid var(--track); padding-top: 5px; }
+/* max-content columns let the widget grow to fit names (it shrink-wraps). */
+.session { display: grid; grid-template-columns: 12px 14px max-content 1fr max-content; gap: 6px; align-items: center; font-size: 11px; }
+.session img { width: 12px; height: 12px; }
+.session .proj { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
+.session .st { color: var(--muted); white-space: nowrap; text-align: right; padding-left: 6px; }
+.session .when { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.session.needs_input .mark, .session.needs_input .st { color: var(--danger); font-weight: 700; }
+.session.working .mark { color: var(--warn); animation: pulse 1.2s infinite; }
+.session.done .mark { color: var(--ok); }
+.more { font-size: 10px; color: var(--muted); }
+@keyframes pulse { 50% { opacity: .3; } }

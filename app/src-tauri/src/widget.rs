@@ -27,6 +27,30 @@ pub struct WidgetSettings {
     pub x: Option<i32>,
     #[serde(default)]
     pub y: Option<i32>,
+    /// Custom background colour (`#rrggbb`); `None` follows the theme.
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub sessions: SessionsMode,
+}
+
+/// How live sessions appear in the widget.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionsMode {
+    /// Counts: "⚠ 1 esperando você · ● 2 trabalhando".
+    #[default]
+    Summary,
+    /// One line per session with project, state and time.
+    List,
+    Hidden,
+}
+
+/// Accepts `#rrggbb` only, normalised to lowercase.
+pub fn valid_color(color: &str) -> Option<String> {
+    let hex = color.strip_prefix('#')?;
+    (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| format!("#{}", hex.to_ascii_lowercase()))
 }
 
 fn default_opacity() -> f64 {
@@ -40,6 +64,8 @@ impl Default for WidgetSettings {
             opacity: default_opacity(),
             x: None,
             y: None,
+            color: None,
+            sessions: SessionsMode::default(),
         }
     }
 }
@@ -116,5 +142,18 @@ pub fn fit(app: &AppHandle, width: f64, height: f64) {
             width.clamp(120.0, 600.0),
             height.clamp(40.0, 600.0),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_hex_colors() {
+        assert_eq!(valid_color("#1A2B3C").as_deref(), Some("#1a2b3c"));
+        assert_eq!(valid_color("1a2b3c"), None);
+        assert_eq!(valid_color("#12345"), None);
+        assert_eq!(valid_color("#12345g"), None);
     }
 }

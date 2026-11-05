@@ -128,7 +128,10 @@ vermelho só em 100%.
 
 Widget flutuante (opcional): janela transparente, sempre visível, que não
 recebe cliques (eles passam para o que está atrás). Para reposicionar, use
-"Mover" nas preferências, arraste e dê clique duplo para fixar.
+"Mover" nas preferências, arraste e dê clique duplo para fixar. A cor e a
+opacidade do fundo são personalizáveis (o texto se ajusta ao brilho da cor), e
+as sessões podem aparecer resumidas ("2 trabalhando"), uma por linha
+(projeto, estado e tempo, as mais urgentes primeiro) ou ocultas.
 
 O app consulta as releases do GitHub ao iniciar e a cada 12 h e avisa quando há
 versão nova (banner + notificação com link para baixar).

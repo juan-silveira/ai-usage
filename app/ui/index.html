@@ -107,7 +107,22 @@
         <button id="widget-move" class="text">Mover</button>
       </div>
       <label class="pref">
-        <span>Fundo</span>
+        <span>Sessões no widget</span>
+        <select id="widget-sessions">
+          <option value="summary">Resumo (2 trabalhando)</option>
+          <option value="list">Uma por linha</option>
+          <option value="hidden">Ocultar</option>
+        </select>
+      </label>
+      <div class="pref">
+        <span>Cor do fundo</span>
+        <span class="row-inline">
+          <input type="color" id="widget-color" title="Escolher cor" />
+          <button id="widget-color-reset" class="text">Cor do tema</button>
+        </span>
+      </div>
+      <label class="pref">
+        <span>Opacidade do fundo</span>
         <input type="range" id="widget-opacity" min="0" max="100" step="5" />
       </label>
       <p class="muted">O widget não recebe cliques: eles passam para o que está atrás. Use “Mover” para reposicioná-lo e clique duplo nele (ou “Fixar”) para prender.</p>

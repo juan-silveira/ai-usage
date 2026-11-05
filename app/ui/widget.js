@@ -6,6 +6,7 @@ const ICON = { claude: "icons/claude.png", codex: "icons/codex.png" };
 let usage = [];
 let sessions = [];
 let levels = { session: [80, 95], weekly: [80, 95] };
+let sessionsMode = "summary";
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -52,13 +53,51 @@ function render() {
         .join("")
     : `<div class="empty">Sem dados de uso</div>`;
 
+  document.getElementById("sessions").innerHTML =
+    sessionsMode === "hidden" ? "" : sessionsMode === "list" ? sessionList() : sessionSummary();
+  fit();
+}
+
+function sessionSummary() {
   const waiting = sessions.filter((s) => s.state === "needs_input").length;
   const working = sessions.filter((s) => s.state === "working").length;
   const parts = [];
   if (waiting) parts.push(`<span class="waiting">⚠ ${waiting} esperando você</span>`);
   if (working) parts.push(`<span>● ${working} trabalhando</span>`);
-  document.getElementById("sessions").innerHTML = parts.join("");
-  fit();
+  return parts.join("");
+}
+
+const STATE = {
+  needs_input: ["⚠", "precisa de você"],
+  working: ["●", "trabalhando"],
+  done: ["✓", "concluída"],
+  idle: ["○", "ociosa"],
+};
+const MAX_LISTED = 6;
+
+function ago(iso) {
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}min`;
+  return `${Math.floor(secs / 3600)}h${String(Math.floor((secs % 3600) / 60)).padStart(2, "0")}`;
+}
+
+// Sessions arrive sorted most urgent first.
+function sessionList() {
+  const rows = sessions.slice(0, MAX_LISTED).map((s) => {
+    const [mark, label] = STATE[s.state] ?? ["·", s.state];
+    const since = s.state === "working" && s.turn_started_at ? s.turn_started_at : s.updated_at;
+    const icon = ICON[s.provider] ? `<img src="${ICON[s.provider]}" alt="" />` : "";
+    return `<div class="session ${s.state}">
+      <span class="mark">${mark}</span>${icon}
+      <span class="proj">${escapeHtml(s.project)}</span>
+      <span class="st">${label}</span>
+      <span class="when">${ago(since)}</span>
+    </div>`;
+  });
+  const more = sessions.length - MAX_LISTED;
+  if (more > 0) rows.push(`<div class="more">+${more} sessões</div>`);
+  return rows.join("");
 }
 
 // Shrink-wrap the native window around the content.
@@ -71,9 +110,22 @@ function fit() {
 
 function applySettings(s) {
   levels = { session: s.alert_session, weekly: s.alert_weekly };
-  document.documentElement.style.setProperty("--bg-alpha", s.widget.opacity);
-  if (s.theme === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = s.theme;
+  sessionsMode = s.widget.sessions;
+  document.getElementById("sessions").classList.toggle("list", sessionsMode === "list");
+  const root = document.documentElement;
+  root.style.setProperty("--bg-alpha", s.widget.opacity);
+  const custom = s.widget.color && /^#[0-9a-f]{6}$/i.test(s.widget.color) ? s.widget.color : null;
+  if (custom) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(custom.slice(i, i + 2), 16));
+    root.style.setProperty("--bg-rgb", `${r} ${g} ${b}`);
+    // Text follows the colour's brightness (relative luminance), not the theme.
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    root.dataset.theme = lum > 0.55 ? "light" : "dark";
+  } else {
+    root.style.removeProperty("--bg-rgb");
+    if (s.theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = s.theme;
+  }
   render();
 }
 
@@ -101,7 +153,8 @@ listen("sessions-updated", (e) => {
 });
 listen("settings-updated", (e) => applySettings(e.payload));
 
-setInterval(render, 30_000);
+// Often enough for the per-session elapsed times in list mode.
+setInterval(render, 5_000);
 
 Promise.all([invoke("get_usage"), invoke("get_sessions"), invoke("get_settings")]).then(([u, s, settings]) => {
   usage = u;

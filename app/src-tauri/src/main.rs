@@ -341,6 +341,18 @@ fn set_widget_opacity(app: AppHandle, opacity: f64) -> Result<(), String> {
     change_settings(&app, |s| s.widget.opacity = opacity.clamp(0.0, 1.0)).map(|_| ())
 }
 
+/// `None` (or an invalid value) returns to the theme's background.
+#[tauri::command]
+fn set_widget_color(app: AppHandle, color: Option<String>) -> Result<(), String> {
+    let color = color.as_deref().and_then(widget::valid_color);
+    change_settings(&app, |s| s.widget.color = color).map(|_| ())
+}
+
+#[tauri::command]
+fn set_widget_sessions(app: AppHandle, mode: widget::SessionsMode) -> Result<(), String> {
+    change_settings(&app, |s| s.widget.sessions = mode).map(|_| ())
+}
+
 #[tauri::command]
 fn set_widget_moving(app: AppHandle, moving: bool) -> Result<(), String> {
     if let Some(pos) = widget::set_moving(&app, moving) {
@@ -711,6 +723,8 @@ fn main() {
             set_alert_thresholds,
             set_widget_enabled,
             set_widget_opacity,
+            set_widget_color,
+            set_widget_sessions,
             set_widget_moving,
             widget_fit,
             check_updates_now,

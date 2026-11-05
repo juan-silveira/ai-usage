@@ -605,3 +605,27 @@ autostart.addEventListener("change", async () => {
     alert(`Não foi possível alterar: ${err}`);
   }
 });
+
+// ---------- Widget background colour ----------
+const widgetColor = document.getElementById("widget-color");
+const widgetColorReset = document.getElementById("widget-color-reset");
+function showWidgetColor(color) {
+  // No custom colour: show the theme's default, dimmed, as the picker value.
+  widgetColor.value = color ?? "#121218";
+  widgetColor.classList.toggle("unset", !color);
+  widgetColorReset.disabled = !color;
+}
+// "input" fires while dragging in the picker: live preview on the widget.
+widgetColor.addEventListener("input", () => {
+  invoke("set_widget_color", { color: widgetColor.value });
+  showWidgetColor(widgetColor.value);
+});
+widgetColorReset.addEventListener("click", () => {
+  invoke("set_widget_color", { color: null });
+  showWidgetColor(null);
+});
+invoke("get_settings").then((s) => showWidgetColor(s.widget.color));
+
+const widgetSessions = document.getElementById("widget-sessions");
+widgetSessions.addEventListener("change", () => invoke("set_widget_sessions", { mode: widgetSessions.value }));
+invoke("get_settings").then((s) => (widgetSessions.value = s.widget.sessions));
