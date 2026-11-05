@@ -496,6 +496,7 @@ function renderConnections() {
       } else {
         const expired = latest.find((x) => x.provider === c.provider)?.status === "token_expired";
         action = `<button class="text" data-act="login">${connected || expired ? "Reconectar" : "Conectar"}</button>`;
+        if (connected || expired) action = `<div class="actions">${action}<button class="text" data-act="logout">Desconectar</button></div>`;
       }
       const loginBox = c.login_running
         ? `<div class="login">
@@ -509,6 +510,17 @@ function renderConnections() {
           </div>`
         : login.result === false
           ? `<div class="login"><span>O login não foi concluído.</span>${login.line ? `<span class="line">${escapeHtml(login.line)}</span>` : ""}</div>`
+          : "";
+      const logoutBox = login.confirmLogout
+        ? `<div class="login">
+            <span>Isso roda <code>${escapeHtml(c.provider === "claude" ? "claude auth logout" : "codex logout")}</code>: o ${escapeHtml(c.name)} também sai da conta no terminal.</span>
+            <div class="row">
+              <button class="text" data-act="logout-confirm">Desconectar</button>
+              <button class="text" data-act="logout-cancel">Cancelar</button>
+            </div>
+          </div>`
+        : login.logoutError
+          ? `<div class="login"><span>Não foi possível desconectar.</span><span class="line">${escapeHtml(login.logoutError)}</span></div>`
           : "";
       const install = c.cli_path
         ? ""
@@ -524,7 +536,7 @@ function renderConnections() {
           </div>
           ${action}
         </div>
-        ${loginBox}${install}
+        ${loginBox}${logoutBox}${install}
         <label class="pref"><span><input type="checkbox" data-act="hooks" ${c.hooks_installed ? "checked" : ""} ${c.cli_path ? "" : "disabled"} />
           Sessões ao vivo (alertas de “precisa de você” e “concluiu”)</span></label>
       </div>`;
@@ -549,6 +561,21 @@ document.getElementById("connections").addEventListener("click", async (e) => {
       await invoke("start_login", { provider });
     } catch (err) {
       loginState[provider] = { result: false, line: String(err) };
+    }
+    await loadConnections();
+  } else if (act === "logout") {
+    loginState[provider] = { confirmLogout: true };
+    renderConnections();
+  } else if (act === "logout-cancel") {
+    loginState[provider] = {};
+    renderConnections();
+  } else if (act === "logout-confirm") {
+    e.target.disabled = true;
+    try {
+      await invoke("logout", { provider });
+      loginState[provider] = {};
+    } catch (err) {
+      loginState[provider] = { logoutError: String(err) };
     }
     await loadConnections();
   } else if (act === "cancel") {

@@ -22,6 +22,7 @@ struct Agent {
     name: &'static str,
     cli: &'static str,
     login_args: &'static [&'static str],
+    logout_args: &'static [&'static str],
     install: &'static str,
 }
 
@@ -31,6 +32,7 @@ const AGENTS: &[Agent] = &[
         name: "Claude Code",
         cli: "claude",
         login_args: &["auth", "login", "--claudeai"],
+        logout_args: &["auth", "logout"],
         install: "npm install -g @anthropic-ai/claude-code",
     },
     Agent {
@@ -38,6 +40,7 @@ const AGENTS: &[Agent] = &[
         name: "Codex",
         cli: "codex",
         login_args: &["login"],
+        logout_args: &["logout"],
         install: "npm install -g @openai/codex",
     },
 ];
@@ -187,6 +190,36 @@ pub fn cancel_login(app: AppHandle, provider: String) {
     if let Some((mut child, _)) = removed {
         let _ = child.kill();
         let _ = child.wait();
+    }
+}
+
+/// Signs out through the agent's CLI, which removes the credentials the usage
+/// provider reads — and so also signs the CLI itself out.
+#[tauri::command]
+pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
+    let agent = agent(&provider)?;
+    let cli = cli_locate::find(agent.cli).ok_or_else(|| format!("{} não encontrado", agent.cli))?;
+    let out = Command::new(&cli)
+        .args(agent.logout_args)
+        .env("PATH", cli_locate::child_path(&cli))
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("não foi possível executar {}: {e}", agent.cli))?;
+    app.state::<crate::Snapshot>()
+        .poller
+        .lock()
+        .unwrap()
+        .forget(&provider);
+    crate::refresh_now(app);
+    if out.status.success() {
+        Ok(())
+    } else {
+        let err = strip_ansi(String::from_utf8_lossy(&out.stderr).trim());
+        Err(if err.is_empty() {
+            format!("{} saiu com {}", agent.cli, out.status)
+        } else {
+            err
+        })
     }
 }
 

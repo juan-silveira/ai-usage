@@ -29,7 +29,7 @@ function left(iso) {
 const SHORT = { session: "5h", weekly: "sem" };
 
 function line(w) {
-  const k = SHORT[w.key] ?? w.label.replace(/^Semanal · /, "").slice(0, 4);
+  const k = w.label === "Mensal" ? "mês" : SHORT[w.key] ?? w.label.replace(/^Semanal · /, "").slice(0, 4);
   return `<div class="line">
     <span class="k">${escapeHtml(k)}</span>
     <span class="bar"><span class="fill ${severity(w.used_percent, w.key)}" style="display:block;width:${w.used_percent}%"></span></span>

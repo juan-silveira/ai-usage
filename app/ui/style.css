@@ -134,6 +134,7 @@ input[type="range"] { width: 55%; accent-color: var(--ok); }
 .conn:first-child { border-top: 0; padding-top: 0; }
 .conn .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .conn .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.conn .actions { display: flex; gap: 4px; flex-shrink: 0; }
 .conn .who img { width: 18px; height: 18px; }
 .conn .name { font-weight: 600; font-size: 13px; }
 .conn .state { font-size: 11px; color: var(--muted); }

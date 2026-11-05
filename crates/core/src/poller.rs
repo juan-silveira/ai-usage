@@ -84,6 +84,14 @@ impl Poller {
         results
     }
 
+    /// Drops what is known about a provider (after signing out), so the next
+    /// poll checks it again instead of reusing a recent result.
+    pub fn forget(&mut self, provider: &str) {
+        self.load_cache();
+        self.state.remove(provider);
+        self.save_cache();
+    }
+
     /// Picks up results/cooldowns written by another process (CLI or a
     /// previous run of the app).
     fn load_cache(&mut self) {

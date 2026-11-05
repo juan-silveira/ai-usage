@@ -122,22 +122,23 @@ fn parse_usage(body: &Value) -> ProviderStatus {
         .filter_map(|(slot, default_weekly)| {
             let w = rate_limit.get(slot).filter(|v| !v.is_null())?;
             let used = w.get("used_percent")?.as_f64()?;
-            let weekly = w
-                .get("limit_window_seconds")
-                .and_then(Value::as_i64)
-                .map_or(default_weekly, |secs| secs >= WEEKLY_THRESHOLD_SECS);
+            let secs = w.get("limit_window_seconds").and_then(Value::as_i64);
+            let weekly = secs.map_or(default_weekly, |secs| secs >= WEEKLY_THRESHOLD_SECS);
             let resets_at = w
                 .get("reset_at")
                 .and_then(Value::as_i64)
                 .and_then(|ts| DateTime::from_timestamp(ts, 0));
+            // The long window keeps the "weekly" key (alert levels, panel
+            // text) even when it isn't 7 days: the Free plan has a single
+            // 30-day window.
             let (key, label) = if weekly {
-                ("weekly", "Semanal")
+                ("weekly", long_window_label(secs))
             } else {
-                ("session", "Sessão (5h)")
+                ("session", "Sessão (5h)".to_string())
             };
             Some(UsageWindow {
                 key: key.into(),
-                label: label.into(),
+                label,
                 used_percent: used.clamp(0.0, 100.0),
                 resets_at,
             })
@@ -151,6 +152,14 @@ fn parse_usage(body: &Value) -> ProviderStatus {
     }
     windows.sort_by_key(|w| w.key != "session");
     ProviderStatus::Ok { windows }
+}
+
+fn long_window_label(secs: Option<i64>) -> String {
+    match secs.map(|s| (s as f64 / 86_400.0).round() as i64) {
+        None | Some(7) => "Semanal".into(),
+        Some(d) if (28..=31).contains(&d) => "Mensal".into(),
+        Some(d) => format!("{d} dias"),
+    }
 }
 
 #[cfg(test)]
@@ -173,6 +182,23 @@ mod tests {
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].key, "weekly");
         assert_eq!(windows[0].used_percent, 77.0);
+    }
+
+    #[test]
+    fn free_plan_has_a_monthly_window() {
+        let body = json!({
+            "plan_type": "free",
+            "rate_limit": {
+                "primary_window": {"used_percent": 0, "limit_window_seconds": 2592000, "reset_at": 1900000000},
+                "secondary_window": null
+            }
+        });
+        let ProviderStatus::Ok { windows } = parse_usage(&body) else {
+            panic!("expected Ok");
+        };
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].key, "weekly");
+        assert_eq!(windows[0].label, "Mensal");
     }
 
     #[test]

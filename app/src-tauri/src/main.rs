@@ -740,6 +740,7 @@ fn main() {
             connect::start_login,
             connect::send_login_code,
             connect::cancel_login,
+            connect::logout,
             connect::set_hooks,
             open_update,
             set_sound_enabled,
