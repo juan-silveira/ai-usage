@@ -4,8 +4,8 @@
 
 use std::collections::HashMap;
 
+use ai_usage_core::{ProviderStatus, ProviderUsage};
 use chrono::{DateTime, Utc};
-use ia_usage_core::{ProviderStatus, ProviderUsage};
 
 pub struct UsageAlert {
     pub title: String,
@@ -71,7 +71,7 @@ impl ThresholdTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ia_usage_core::UsageWindow;
+    use ai_usage_core::UsageWindow;
 
     fn usage(pct: f64, reset_secs: i64) -> Vec<ProviderUsage> {
         vec![ProviderUsage {

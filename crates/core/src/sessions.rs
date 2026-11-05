@@ -1,6 +1,6 @@
 //! Live state of coding-agent sessions, fed by Claude Code / Codex hooks.
 //!
-//! Each hook invocation (`ia-usage hook <provider>`) updates one small JSON
+//! Each hook invocation (`ai-usage hook <provider>`) updates one small JSON
 //! file per session in the state directory. The desktop app only reads these
 //! files, so hooks keep working (and never block the agent) while it is closed.
 
@@ -45,12 +45,12 @@ pub struct Session {
 }
 
 pub fn state_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("IA_USAGE_STATE_DIR") {
+    if let Some(dir) = std::env::var_os("AI_USAGE_STATE_DIR") {
         return Some(PathBuf::from(dir));
     }
     dirs::state_dir()
         .or_else(dirs::data_local_dir)
-        .map(|d| d.join("ia-usage").join("sessions"))
+        .map(|d| d.join("ai-usage").join("sessions"))
 }
 
 fn session_path(dir: &Path, provider: &str, session_id: &str) -> PathBuf {
@@ -234,7 +234,7 @@ mod tests {
     use serde_json::json;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ia-usage-test-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ai-usage-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }

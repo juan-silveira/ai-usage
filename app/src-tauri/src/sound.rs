@@ -33,7 +33,7 @@ pub fn play(sound: Sound) {
             let mut sink = match rodio::DeviceSinkBuilder::open_default_sink() {
                 Ok(sink) => sink,
                 Err(e) => {
-                    eprintln!("ia-usage: no audio output, alert sounds disabled: {e}");
+                    eprintln!("ai-usage: no audio output, alert sounds disabled: {e}");
                     return;
                 }
             };

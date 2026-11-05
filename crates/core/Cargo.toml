@@ -1,5 +1,5 @@
 [package]
-name = "ia-usage-core"
+name = "ai-usage-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

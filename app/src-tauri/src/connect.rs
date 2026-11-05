@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 
-use ia_usage_core::{cli_locate, hook_install};
+use ai_usage_core::{cli_locate, hook_install};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 

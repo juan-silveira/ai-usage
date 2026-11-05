@@ -1,6 +1,6 @@
-# IA Usage
+# AI Usage
 
-[![CI](https://github.com/juan-silveira/ia-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/juan-silveira/ia-usage/actions/workflows/ci.yml)
+[![CI](https://github.com/juan-silveira/ai-usage/actions/workflows/ci.yml/badge.svg)](https://github.com/juan-silveira/ai-usage/actions/workflows/ci.yml)
 
 Monitor de uso das assinaturas de IA (Claude Code, OpenAI Codex, …) para
 **Linux, Windows e macOS**. Fica na bandeja do sistema e mostra:
@@ -18,7 +18,7 @@ tokens, para não deslogar a CLI).
 ## Instalação
 
 Baixe o instalador do seu sistema na página de
-[Releases](https://github.com/juan-silveira/ia-usage/releases):
+[Releases](https://github.com/juan-silveira/ai-usage/releases):
 `.deb`/`.rpm`/`.AppImage` (Linux), `.msi`/`-setup.exe` (Windows) ou `.dmg`
 (macOS — `aarch64` para Apple Silicon, `x64` para Intel). Os builds não são
 assinados: no macOS abra com clique direito → Abrir; no Windows, "Mais
@@ -28,7 +28,7 @@ informações" → "Executar assim mesmo".
 
 ```
 crates/core      biblioteca Rust: provedores, modelo de dados, HTTP
-crates/cli       `ia-usage` — imprime uso no terminal ou em JSON
+crates/cli       `ai-usage` — imprime uso no terminal ou em JSON
 app/src-tauri    app desktop (Tauri 2): bandeja + janela flutuante
 app/ui           frontend estático (HTML/CSS/JS, sem build)
 ```
@@ -54,8 +54,8 @@ peça. Sem a CLI instalada, mostra o comando de instalação. O app encontra as
 CLIs mesmo fora do PATH do desktop (asdf, nvm, volta, npm global).
 
 O interruptor **Sessões ao vivo** instala/remove os hooks. Eles chamam o
-próprio executável do app (`ia-usage-app hook claude`), então não é preciso
-instalar a CLI `ia-usage` separadamente.
+próprio executável do app (`ai-usage-app hook claude`), então não é preciso
+instalar a CLI `ai-usage` separadamente.
 
 O app inicia com o sistema (ligado por padrão na primeira execução, direto
 na barra, sem abrir a janela) e tem tema claro/escuro/seguir o sistema para a
@@ -63,11 +63,11 @@ janela e o widget.
 
 ## Sessões e alertas
 
-O comando `ia-usage hook <claude|codex>` é registrado como hook dos agentes.
+O comando `ai-usage hook <claude|codex>` é registrado como hook dos agentes.
 A cada evento (prompt enviado, ferramenta usada, pedido de permissão, turno
 concluído, sessão encerrada) ele grava um JSON pequeno por sessão em
-`~/.local/state/ia-usage/sessions/` (Linux), `~/Library/Application Support/ia-usage/sessions/`
-(macOS) ou `%LOCALAPPDATA%\ia-usage\sessions\` (Windows). O app lê essa pasta
+`~/.local/state/ai-usage/sessions/` (Linux), `~/Library/Application Support/ai-usage/sessions/`
+(macOS) ou `%LOCALAPPDATA%\ai-usage\sessions\` (Windows). O app lê essa pasta
 a cada 2 s; o hook nunca falha nem imprime nada, então não atrapalha o agente
 mesmo com o app fechado.
 
@@ -82,25 +82,25 @@ mesmo com o app fechado.
 Clicar numa sessão "precisa de você" na janela silencia os lembretes.
 
 ```sh
-cargo install --path crates/cli   # instala o binário em ~/.cargo/bin/ia-usage
-ia-usage hooks install            # Claude (~/.claude/settings.json) e Codex (~/.codex/hooks.json)
-ia-usage hooks install claude     # só um provedor
-ia-usage hooks status
-ia-usage sessions                 # lista as sessões no terminal
-ia-usage hooks uninstall          # remove só as entradas do ia-usage
+cargo install --path crates/cli   # instala o binário em ~/.cargo/bin/ai-usage
+ai-usage hooks install            # Claude (~/.claude/settings.json) e Codex (~/.codex/hooks.json)
+ai-usage hooks install claude     # só um provedor
+ai-usage hooks status
+ai-usage sessions                 # lista as sessões no terminal
+ai-usage hooks uninstall          # remove só as entradas do ai-usage
 ```
 
 A instalação mescla com o que já existe (outros hooks e configurações ficam
-intactos), é idempotente e guarda um backup `*.ia-usage.bak` do arquivo original.
+intactos), é idempotente e guarda um backup `*.ai-usage.bak` do arquivo original.
 
 ## Uso
 
 ### CLI
 
 ```sh
-cargo run -p ia-usage-cli              # tabela
-cargo run -p ia-usage-cli -- --json    # JSON (scripts, barras de status, displays)
-cargo run -p ia-usage-cli -- --watch 60
+cargo run -p ai-usage-cli              # tabela
+cargo run -p ai-usage-cli -- --json    # JSON (scripts, barras de status, displays)
+cargo run -p ai-usage-cli -- --watch 60
 ```
 
 ### App desktop
@@ -114,7 +114,7 @@ sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
 ```sh
-cargo run -p ia-usage-app                 # desenvolvimento
+cargo run -p ai-usage-app                 # desenvolvimento
 cargo install tauri-cli --version '^2'    # uma vez
 cd app/src-tauri && cargo tauri build     # instaladores (.deb/.AppImage, .msi, .dmg)
 ```

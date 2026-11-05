@@ -1,19 +1,19 @@
-//! `ia-usage` — AI subscription usage and live agent sessions.
+//! `ai-usage` — AI subscription usage and live agent sessions.
 //!
-//!   ia-usage                     usage table
-//!   ia-usage --json              usage as JSON (scripts, status bars, displays)
-//!   ia-usage --watch 60          refresh every 60 seconds
-//!   ia-usage sessions [--json]   live Claude Code / Codex sessions
-//!   ia-usage hooks install|uninstall|status [claude|codex]
-//!   ia-usage hook <provider>     hook handler (called by the agents, reads stdin)
+//!   ai-usage                     usage table
+//!   ai-usage --json              usage as JSON (scripts, status bars, displays)
+//!   ai-usage --watch 60          refresh every 60 seconds
+//!   ai-usage sessions [--json]   live Claude Code / Codex sessions
+//!   ai-usage hooks install|uninstall|status [claude|codex]
+//!   ai-usage hook <provider>     hook handler (called by the agents, reads stdin)
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use ai_usage_core::hook_install::{self, Target};
+use ai_usage_core::{list_sessions, Poller, ProviderStatus, ProviderUsage, SessionState};
 use chrono::{Local, Utc};
-use ia_usage_core::hook_install::{self, Target};
-use ia_usage_core::{list_sessions, Poller, ProviderStatus, ProviderUsage, SessionState};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -64,7 +64,7 @@ fn run_usage(args: &[String]) {
 fn run_hook(provider: Option<&str>) -> ExitCode {
     if let Some(provider @ ("claude" | "codex")) = provider {
         if let Ok(payload) = serde_json::from_reader::<_, serde_json::Value>(std::io::stdin()) {
-            let _ = ia_usage_core::sessions::apply_hook_event(provider, &payload);
+            let _ = ai_usage_core::sessions::apply_hook_event(provider, &payload);
         }
     }
     ExitCode::SUCCESS
@@ -91,7 +91,7 @@ fn run_hooks(args: &[String]) -> ExitCode {
                 if exe.components().any(|c| c.as_os_str() == "target") {
                     eprintln!(
                         "aviso: instalando hooks apontando para um binário de build ({}).\n       \
-                         Prefira `cargo install --path crates/cli` e rode o ia-usage instalado.",
+                         Prefira `cargo install --path crates/cli` e rode o ai-usage instalado.",
                         exe.display()
                     );
                 }
@@ -102,7 +102,7 @@ fn run_hooks(args: &[String]) -> ExitCode {
                 if removed {
                     format!("{}: hooks removidos de {path}", target.provider)
                 } else {
-                    format!("{}: nenhum hook do ia-usage em {path}", target.provider)
+                    format!("{}: nenhum hook do ai-usage em {path}", target.provider)
                 }
             }),
             "status" => Ok(format!(
@@ -149,7 +149,7 @@ fn print_sessions(json: bool) {
         return;
     }
     if sessions.is_empty() {
-        println!("Nenhuma sessão ativa (os hooks estão instalados? `ia-usage hooks status`)");
+        println!("Nenhuma sessão ativa (os hooks estão instalados? `ai-usage hooks status`)");
         return;
     }
     for s in &sessions {

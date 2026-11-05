@@ -159,7 +159,7 @@ fn apply(state: &mut ProviderState, result: ProviderUsage, now: DateTime<Utc>) -
         ProviderStatus::RateLimited { retry_after_secs } => {
             state.rate_limited += 1;
             eprintln!(
-                "ia-usage: {} usage endpoint returned 429 (Retry-After: {}), attempt {}",
+                "ai-usage: {} usage endpoint returned 429 (Retry-After: {}), attempt {}",
                 result.provider,
                 retry_after_secs.map_or("none".to_string(), |s| format!("{s}s")),
                 state.rate_limited

@@ -1,5 +1,5 @@
 [package]
-name = "ia-usage-app"
+name = "ai-usage-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,8 @@ license.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-ia-usage-core.workspace = true
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+ai-usage-core.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 tauri-plugin-notification = "2"
@@ -18,7 +19,7 @@ tauri-plugin-autostart = "2"
 ureq = { version = "2", features = ["json"] }
 rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
 
+# Native Cinnamon/XApp panel icons (see xapp_tray.rs).
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 libloading = "0.8"
-tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }

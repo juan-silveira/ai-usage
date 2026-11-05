@@ -4,6 +4,7 @@
 mod alerts;
 mod bar;
 mod connect;
+mod migrate;
 mod sound;
 mod updates;
 mod usage_alerts;
@@ -16,7 +17,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use ia_usage_core::{list_sessions, Poller, ProviderUsage, Session};
+use ai_usage_core::{list_sessions, Poller, ProviderUsage, Session};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
@@ -391,8 +392,8 @@ fn check_updates(app: &AppHandle) -> UpdateStatus {
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("IA Usage {} disponível", info.version))
-                .body("Abra a janela do IA Usage para baixar a nova versão.")
+                .title(format!("AI Usage {} disponível", info.version))
+                .body("Abra a janela do AI Usage para baixar a nova versão.")
                 .show();
             let version = info.version.clone();
             let _ = change_settings(app, |s| s.update_notified = Some(version));
@@ -570,7 +571,7 @@ fn notification_icon(kind: AlertKind) -> Option<String> {
     let files = FILES.get_or_init(|| {
         let dir = std::env::temp_dir();
         let write = |name: &str, bytes: &[u8]| {
-            let path = dir.join(format!("ia-usage-{}-{name}.png", std::process::id()));
+            let path = dir.join(format!("ai-usage-{}-{name}.png", std::process::id()));
             std::fs::write(&path, bytes).ok()?;
             Some(path.to_string_lossy().into_owned())
         };
@@ -697,7 +698,7 @@ fn main() {
     if args.get(1).map(String::as_str) == Some("hook") {
         if let Some(provider @ ("claude" | "codex")) = args.get(2).map(String::as_str) {
             if let Ok(payload) = serde_json::from_reader::<_, serde_json::Value>(std::io::stdin()) {
-                let _ = ia_usage_core::sessions::apply_hook_event(provider, &payload);
+                let _ = ai_usage_core::sessions::apply_hook_event(provider, &payload);
             }
         }
         return;
@@ -746,7 +747,9 @@ fn main() {
             refresh_now
         ])
         .setup(|app| {
+            migrate::legacy_name(app.handle());
             *app.state::<Snapshot>().settings.lock().unwrap() = Settings::load(app.handle());
+            migrate::repoint_hooks();
 
             #[cfg(target_os = "linux")]
             let native_tray = xapp_tray::try_init(
@@ -855,5 +858,5 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running IA Usage");
+        .expect("error while running AI Usage");
 }

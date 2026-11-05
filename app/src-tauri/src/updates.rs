@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 /// `owner/repo` on GitHub whose releases are checked.
-pub const REPO: &str = "juan-silveira/ia-usage";
+pub const REPO: &str = "juan-silveira/ai-usage";
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,7 +40,7 @@ pub fn check() -> Result<Option<UpdateInfo>, String> {
         .get(&url)
         .set(
             "User-Agent",
-            concat!("ia-usage/", env!("CARGO_PKG_VERSION")),
+            concat!("ai-usage/", env!("CARGO_PKG_VERSION")),
         )
         .set("Accept", "application/vnd.github+json")
         .call();

@@ -18,6 +18,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai-usage-app"
+version = "0.1.0"
+dependencies = [
+ "ai-usage-core",
+ "chrono",
+ "gtk",
+ "libloading 0.8.9",
+ "rodio",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "ureq",
+]
+
+[[package]]
+name = "ai-usage-cli"
+version = "0.1.0"
+dependencies = [
+ "ai-usage-core",
+ "chrono",
+ "serde_json",
+]
+
+[[package]]
+name = "ai-usage-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1681,46 +1721,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "ia-usage-app"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "gtk",
- "ia-usage-core",
- "libloading 0.8.9",
- "rodio",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "ureq",
-]
-
-[[package]]
-name = "ia-usage-cli"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "ia-usage-core",
- "serde_json",
-]
-
-[[package]]
-name = "ia-usage-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "serde",
- "serde_json",
- "ureq",
 ]
 
 [[package]]

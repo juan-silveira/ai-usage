@@ -113,7 +113,7 @@ pub fn sync(items: &[BarItem]) -> bool {
         };
         // Slot i shows item i; create slots as needed, hide the rest.
         while state.icons.len() < items.len() {
-            let name = format!("ia-usage-{}", state.icons.len());
+            let name = format!("ai-usage-{}", state.icons.len());
             match unsafe { state.create(&name) } {
                 Some(icon) => state.icons.push(icon),
                 None => break,
@@ -205,7 +205,7 @@ impl State {
             return Some(path.clone());
         }
         let path: PathBuf = std::env::temp_dir().join(format!(
-            "ia-usage-{}-{}.png",
+            "ai-usage-{}-{}.png",
             std::process::id(),
             self.icon_files.len()
         ));

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "IA Usage",
+  "productName": "AI Usage",
   "version": "0.1.0",
-  "identifier": "io.github.ia-usage",
+  "identifier": "io.github.ai-usage",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "IA Usage",
+        "title": "AI Usage",
         "width": 360,
         "height": 440,
         "minWidth": 300,
@@ -40,7 +40,7 @@
     "longDescription": "Monitor de limites de uso e sessões ao vivo do Claude Code e do OpenAI Codex, com alertas, widget flutuante e item na barra do sistema.",
     "category": "DeveloperTool",
     "publisher": "Juan Silveira",
-    "homepage": "https://github.com/juan-silveira/ia-usage",
+    "homepage": "https://github.com/juan-silveira/ai-usage",
     "license": "MIT"
   }
 }

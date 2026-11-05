@@ -1,9 +1,9 @@
-//! Registers `ia-usage hook <provider>` in the agents' hook configs:
+//! Registers `ai-usage hook <provider>` in the agents' hook configs:
 //! `~/.claude/settings.json` (Claude Code) and `~/.codex/hooks.json` (Codex).
 //!
 //! Edits are merges: other keys and other hooks are left untouched, our own
 //! entries are recognised by their command and replaced, and the original file
-//! is copied to `<file>.ia-usage.bak` before the first change.
+//! is copied to `<file>.ai-usage.bak` before the first change.
 
 use std::path::{Path, PathBuf};
 
@@ -67,10 +67,14 @@ pub fn hook_command(exe: &Path, provider: &str) -> String {
     format!("\"{}\" hook {provider}", exe.display())
 }
 
+/// Our entries, including ones from before the rename (`ia-usage`).
 fn is_ours(hook: &Value, provider: &str) -> bool {
     hook.get("command")
         .and_then(Value::as_str)
-        .is_some_and(|c| c.contains("ia-usage") && c.ends_with(&format!(" hook {provider}")))
+        .is_some_and(|c| {
+            (c.contains("ai-usage") || c.contains("ia-usage"))
+                && c.ends_with(&format!(" hook {provider}"))
+        })
 }
 
 /// Removes our entries from every event; drops groups/events left empty.
@@ -152,7 +156,7 @@ fn read_config(path: &Path) -> std::io::Result<Value> {
 
 fn write_config(path: &Path, config: &Value) -> std::io::Result<()> {
     if path.exists() {
-        let backup = path.with_extension("json.ia-usage.bak");
+        let backup = path.with_extension("json.ai-usage.bak");
         if !backup.exists() {
             std::fs::copy(path, &backup)?;
         }
@@ -161,7 +165,7 @@ fn write_config(path: &Path, config: &Value) -> std::io::Result<()> {
     }
     let mut text = serde_json::to_string_pretty(config)?;
     text.push('\n');
-    let tmp = path.with_extension("json.ia-usage.tmp");
+    let tmp = path.with_extension("json.ai-usage.tmp");
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
 }
@@ -177,7 +181,7 @@ pub fn install(target: &Target, exe: &Path) -> std::io::Result<()> {
     write_config(&target.config_path, &config)
 }
 
-/// Whether the provider's config currently runs an ia-usage hook.
+/// Whether the provider's config currently runs an ai-usage hook.
 pub fn is_installed(target: &Target) -> bool {
     let Ok(text) = std::fs::read_to_string(&target.config_path) else {
         return false;
@@ -199,6 +203,26 @@ pub fn is_installed(target: &Target) -> bool {
                         .is_some_and(|l| l.iter().any(|h| is_ours(h, target.provider)))
                 })
         })
+}
+
+/// The command of our installed hook, if any (first one found).
+pub fn installed_command(target: &Target) -> Option<String> {
+    let text = std::fs::read_to_string(&target.config_path).ok()?;
+    let config: Value = serde_json::from_str(&text).ok()?;
+    config
+        .get("hooks")?
+        .as_object()?
+        .values()
+        .flat_map(|g| g.as_array().into_iter().flatten())
+        .flat_map(|group| {
+            group
+                .get("hooks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .find(|h| is_ours(h, target.provider))
+        .and_then(|h| h.get("command")?.as_str().map(str::to_string))
 }
 
 pub fn target(provider: &str) -> Option<Target> {
@@ -230,7 +254,7 @@ mod tests {
                 "Stop": [{"hooks": [{"type": "command", "command": "notify-send done"}]}]
             }
         });
-        let cmd = hook_command(Path::new("/usr/bin/ia-usage"), "claude");
+        let cmd = hook_command(Path::new("/usr/bin/ai-usage"), "claude");
         add_hooks(&mut config, "claude", &["Stop", "SessionStart"], &cmd);
         add_hooks(&mut config, "claude", &["Stop", "SessionStart"], &cmd);
 
@@ -250,7 +274,7 @@ mod tests {
         let mut config = json!({
             "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "notify-send done"}]}]}
         });
-        let cmd = hook_command(Path::new("/opt/ia-usage"), "claude");
+        let cmd = hook_command(Path::new("/opt/ai-usage"), "claude");
         add_hooks(&mut config, "claude", &["Stop", "SessionEnd"], &cmd);
         assert!(remove_hooks(&mut config, "claude"));
         assert_eq!(
@@ -261,13 +285,36 @@ mod tests {
     }
 
     #[test]
+    fn legacy_name_entries_are_replaced() {
+        let mut config = json!({});
+        add_hooks(
+            &mut config,
+            "claude",
+            &["Stop"],
+            "\"/old/ia-usage\" hook claude",
+        );
+        add_hooks(
+            &mut config,
+            "claude",
+            &["Stop"],
+            "\"/new/ai-usage-app\" hook claude",
+        );
+        let stop = config["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        assert_eq!(
+            stop[0]["hooks"][0]["command"],
+            "\"/new/ai-usage-app\" hook claude"
+        );
+    }
+
+    #[test]
     fn uninstall_removes_empty_hooks_key() {
         let mut config = json!({"theme": "dark"});
         add_hooks(
             &mut config,
             "codex",
             &["Stop"],
-            "\"/x/ia-usage\" hook codex",
+            "\"/x/ai-usage\" hook codex",
         );
         remove_hooks(&mut config, "codex");
         assert_eq!(config, json!({"theme": "dark"}));

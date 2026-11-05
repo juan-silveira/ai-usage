@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use ai_usage_core::{Session, SessionState};
 use chrono::{DateTime, Utc};
-use ia_usage_core::{Session, SessionState};
 
 pub const REMINDER_EVERY: Duration = Duration::from_secs(120);
 const MAX_REMINDERS: u32 = 5;

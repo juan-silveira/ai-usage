@@ -79,7 +79,7 @@ pub fn open(app: &AppHandle, settings: &WidgetSettings) -> tauri::Result<()> {
         return w.show();
     }
     let w = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("widget.html".into()))
-        .title("IA Usage — widget")
+        .title("AI Usage — widget")
         .inner_size(230.0, 90.0)
         .transparent(true)
         .decorations(false)

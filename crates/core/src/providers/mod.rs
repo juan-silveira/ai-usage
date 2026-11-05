@@ -36,7 +36,7 @@ pub fn all_providers() -> Vec<Box<dyn Provider>> {
 pub(crate) fn http_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(15))
-        .user_agent(concat!("ia-usage/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("ai-usage/", env!("CARGO_PKG_VERSION")))
         .build()
 }
 

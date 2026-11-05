@@ -8,7 +8,7 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-ia-usage-core = { path = "crates/core" }
+ai-usage-core = { path = "crates/core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }

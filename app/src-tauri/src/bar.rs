@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use ai_usage_core::{ProviderStatus, ProviderUsage, Session, SessionState, UsageWindow};
 use chrono::{DateTime, Datelike, Local, Utc};
-use ia_usage_core::{ProviderStatus, ProviderUsage, Session, SessionState, UsageWindow};
 use serde::{Deserialize, Serialize};
 
 pub const APP_ITEM: &str = "app";
@@ -235,7 +235,7 @@ fn provider_tooltip(p: &ProviderUsage) -> String {
 }
 
 fn summary_tooltip(usage: &[ProviderUsage], waiting: usize) -> String {
-    let mut lines = vec!["IA Usage".to_string()];
+    let mut lines = vec!["AI Usage".to_string()];
     lines.extend(usage.iter().map(|p| match p.peak_percent() {
         Some(pct) => format!("{}: {pct:.0}%", p.display_name),
         None => format!("{}: —", p.display_name),
@@ -249,8 +249,8 @@ fn summary_tooltip(usage: &[ProviderUsage], waiting: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_usage_core::UsageWindow;
     use chrono::Utc;
-    use ia_usage_core::UsageWindow;
 
     fn usage(provider: &str, session: f64, weekly: f64) -> ProviderUsage {
         let w = |key: &str, used| UsageWindow {

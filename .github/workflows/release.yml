@@ -50,9 +50,9 @@ jobs:
         with:
           projectPath: app
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseName: IA Usage v__VERSION__
+          releaseName: AI Usage v__VERSION__
           releaseBody: |
-            Instaladores do IA Usage v__VERSION__.
+            Instaladores do AI Usage v__VERSION__.
 
             - Linux: `.deb` (Debian/Ubuntu/Mint), `.rpm` (Fedora) ou `.AppImage`
             - Windows: `.msi` ou `-setup.exe`
