@@ -16,6 +16,26 @@
     <section id="sessions"><p class="muted">Nenhuma sessão ativa.</p></section>
     <h2 class="section">Limites</h2>
     <main id="providers"><p class="muted">Carregando…</p></main>
+    <h2 class="section">Preferências</h2>
+    <section class="card prefs">
+      <label class="pref">
+        <span>Texto na barra do sistema</span>
+        <select id="bar-format">
+          <option value="peak">Maior uso (CL 17%)</option>
+          <option value="session">Sessão 5h (CL 5%)</option>
+          <option value="session_weekly">Sessão e semanal (CL 5/17%)</option>
+          <option value="off">Só o ícone</option>
+        </select>
+      </label>
+      <div class="pref">
+        <label><input type="checkbox" id="sound-needs-input" /> Som quando precisa de você</label>
+        <button class="small" data-preview="needs_input" title="Ouvir">▶</button>
+      </div>
+      <div class="pref">
+        <label><input type="checkbox" id="sound-done" /> Som quando conclui</label>
+        <button class="small" data-preview="done" title="Ouvir">▶</button>
+      </div>
+    </section>
     <footer id="updated" class="muted"></footer>
     <script src="main.js"></script>
   </body>

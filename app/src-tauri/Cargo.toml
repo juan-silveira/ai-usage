@@ -12,4 +12,10 @@ ia-usage-core.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 tauri-plugin-notification = "2"
+serde.workspace = true
+rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+libloading = "0.8"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }

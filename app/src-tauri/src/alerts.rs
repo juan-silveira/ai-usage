@@ -15,7 +15,14 @@ const MAX_REMINDERS: u32 = 5;
 /// Turns at least this long get a celebratory "done" message.
 const LONG_TURN_SECS: i64 = 5 * 60;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertKind {
+    NeedsInput,
+    Done,
+}
+
 pub struct Alert {
+    pub kind: AlertKind,
     pub title: String,
     pub body: String,
 }
@@ -67,6 +74,7 @@ impl AlertTracker {
                         t.reminders += 1;
                         t.last_alert = now;
                         alerts.push(Alert {
+                            kind: AlertKind::NeedsInput,
                             title: format!("Lembrete: {name} ainda espera você"),
                             body: describe(s),
                         });
@@ -79,6 +87,7 @@ impl AlertTracker {
                         match s.state {
                             // A new request while already waiting also alerts.
                             SessionState::NeedsInput => alerts.push(Alert {
+                                kind: AlertKind::NeedsInput,
                                 title: format!("{name} precisa de você"),
                                 body: describe(s),
                             }),
@@ -123,11 +132,13 @@ fn done_alert(name: &str, s: &Session) -> Alert {
     let mins = secs / 60;
     if secs >= LONG_TURN_SECS {
         Alert {
+            kind: AlertKind::Done,
             title: format!("🎉 {name} concluiu após {mins} min"),
             body: describe(s),
         }
     } else {
         Alert {
+            kind: AlertKind::Done,
             title: format!("{name} concluiu"),
             body: describe(s),
         }

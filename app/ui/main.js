@@ -198,6 +198,26 @@ document.getElementById("refresh").addEventListener("click", () => invoke("refre
 setInterval(renderLimits, 30_000);
 setInterval(renderSessions, 5_000);
 
+const barFormat = document.getElementById("bar-format");
+barFormat.addEventListener("change", () => invoke("set_bar_format", { format: barFormat.value }));
+
+const soundToggles = {
+  needs_input: document.getElementById("sound-needs-input"),
+  done: document.getElementById("sound-done"),
+};
+for (const [sound, box] of Object.entries(soundToggles)) {
+  box.addEventListener("change", () => invoke("set_sound_enabled", { sound, enabled: box.checked }));
+}
+document.querySelectorAll("[data-preview]").forEach((btn) =>
+  btn.addEventListener("click", () => invoke("preview_sound", { sound: btn.dataset.preview }))
+);
+
+invoke("get_settings").then((settings) => {
+  barFormat.value = settings.bar_format;
+  soundToggles.needs_input.checked = settings.sound_needs_input;
+  soundToggles.done.checked = settings.sound_done;
+});
+
 invoke("get_sessions").then((list) => {
   sessions = list;
   render();
