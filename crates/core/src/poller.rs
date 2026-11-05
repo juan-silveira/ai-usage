@@ -5,10 +5,16 @@
 //! 429s, and meanwhile keeps serving the last good result marked as stale
 //! instead of replacing it with an error. Network errors also fall back to
 //! the last good result, but are retried on the next regular poll.
+//!
+//! The state is cached on disk, shared by the app and the CLI, so restarting
+//! the app or running the CLI alongside it doesn't hit the endpoint again
+//! when a fresh result (or a cooldown) is already known.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::model::{ProviderStatus, ProviderUsage, Stale};
 use crate::providers::{all_providers, Provider};
@@ -16,8 +22,10 @@ use crate::providers::{all_providers, Provider};
 const MIN_BACKOFF_SECS: i64 = 60;
 const DEFAULT_BACKOFF_SECS: i64 = 5 * 60;
 const MAX_BACKOFF_SECS: i64 = 30 * 60;
+/// A good result younger than this is reused instead of fetching again.
+const MIN_FETCH_INTERVAL_SECS: i64 = 50;
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 struct ProviderState {
     last_ok: Option<ProviderUsage>,
     next_attempt: Option<DateTime<Utc>>,
@@ -26,39 +34,90 @@ struct ProviderState {
 
 pub struct Poller {
     providers: Vec<Box<dyn Provider>>,
-    state: HashMap<&'static str, ProviderState>,
+    state: HashMap<String, ProviderState>,
+    cache: Option<PathBuf>,
 }
 
 impl Default for Poller {
+    /// All providers, with the shared on-disk cache.
     fn default() -> Self {
-        Self::new(all_providers())
+        let mut poller = Self::new(all_providers());
+        poller.cache = crate::sessions::state_dir()
+            .and_then(|d| d.parent().map(|p| p.join("usage-cache.json")));
+        poller
     }
 }
 
 impl Poller {
+    /// A poller without disk cache (tests, embedding).
     pub fn new(providers: Vec<Box<dyn Provider>>) -> Self {
         Self {
             providers,
             state: HashMap::new(),
+            cache: None,
         }
     }
 
     pub fn poll(&mut self) -> Vec<ProviderUsage> {
+        self.load_cache();
         let now = Utc::now();
         let providers = std::mem::take(&mut self.providers);
         let results = providers
             .iter()
             .map(|p| {
-                let state = self.state.entry(p.id()).or_default();
+                let state = self.state.entry(p.id().to_string()).or_default();
+                let fresh = state.last_ok.as_ref().filter(|last| {
+                    now - last.fetched_at < Duration::seconds(MIN_FETCH_INTERVAL_SECS)
+                });
                 match state.next_attempt {
                     // Still cooling down: don't touch the endpoint.
                     Some(at) if at > now => held_back(state, p.fetch_placeholder(), at),
+                    _ if fresh.is_some() => fresh.unwrap().clone(),
                     _ => apply(state, p.fetch(), now),
                 }
             })
             .collect();
         self.providers = providers;
+        self.save_cache();
         results
+    }
+
+    /// Picks up results/cooldowns written by another process (CLI or a
+    /// previous run of the app).
+    fn load_cache(&mut self) {
+        let Some(path) = &self.cache else { return };
+        let Some(disk) = std::fs::read(path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<HashMap<String, ProviderState>>(&b).ok())
+        else {
+            return;
+        };
+        for (id, theirs) in disk {
+            let ours = self.state.entry(id).or_default();
+            let newer = |t: &ProviderState, o: &ProviderState| match (&t.last_ok, &o.last_ok) {
+                (Some(t), Some(o)) => t.fetched_at > o.fetched_at,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if newer(&theirs, ours) {
+                ours.last_ok = theirs.last_ok;
+            }
+            if theirs.next_attempt > ours.next_attempt {
+                ours.next_attempt = theirs.next_attempt;
+                ours.rate_limited = ours.rate_limited.max(theirs.rate_limited);
+            }
+        }
+    }
+
+    fn save_cache(&self) {
+        let Some(path) = &self.cache else { return };
+        if let (Some(dir), Ok(bytes)) = (path.parent(), serde_json::to_vec(&self.state)) {
+            let _ = std::fs::create_dir_all(dir);
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, bytes).is_ok() {
+                let _ = std::fs::rename(tmp, path);
+            }
+        }
     }
 }
 
@@ -177,6 +236,28 @@ mod tests {
         }
     }
 
+    /// Pretends the last good result is older than the minimum interval.
+    fn age(poller: &mut Poller) {
+        for state in poller.state.values_mut() {
+            if let Some(last) = &mut state.last_ok {
+                last.fetched_at -= Duration::seconds(MIN_FETCH_INTERVAL_SECS + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn recent_result_is_reused_without_fetching() {
+        let queue = Arc::new(Mutex::new(vec![ok(10.0)]));
+        let calls = Arc::new(Mutex::new(0));
+        let mut poller = Poller::new(vec![Box::new(Fake {
+            queue,
+            calls: calls.clone(),
+        })]);
+        poller.poll();
+        assert_eq!(poller.poll()[0].peak_percent(), Some(10.0));
+        assert_eq!(*calls.lock().unwrap(), 1);
+    }
+
     #[test]
     fn rate_limit_keeps_last_good_data_and_stops_calling() {
         let queue = Arc::new(Mutex::new(vec![
@@ -192,6 +273,7 @@ mod tests {
         })]);
 
         assert!(poller.poll()[0].stale.is_none());
+        age(&mut poller);
         let r = &poller.poll()[0];
         assert!(matches!(r.status, ProviderStatus::Ok { .. }));
         let stale = r.stale.as_ref().expect("stale");
@@ -218,6 +300,7 @@ mod tests {
             calls: calls.clone(),
         })]);
         poller.poll();
+        age(&mut poller);
         assert_eq!(poller.poll()[0].stale.as_ref().unwrap().reason, "offline");
         let r = &poller.poll()[0];
         assert!(r.stale.is_none());

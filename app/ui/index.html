@@ -12,11 +12,19 @@
       <button id="refresh" title="Atualizar agora">↻</button>
     </header>
     <nav id="tabs" role="tablist" aria-label="Provedores"></nav>
+    <div id="update-banner" hidden>
+      <span id="update-text"></span>
+      <button id="update-open" class="text">Baixar</button>
+    </div>
+    <div id="view-usage">
     <h2 class="section">Sessões</h2>
     <section id="sessions"><p class="muted">Nenhuma sessão ativa.</p></section>
     <h2 class="section">Limites</h2>
     <main id="providers"><p class="muted">Carregando…</p></main>
-    <h2 class="section">Preferências</h2>
+    <footer id="updated" class="muted"></footer>
+    </div>
+    <div id="view-settings" hidden>
+    <h2 class="section">Barra do sistema</h2>
     <section class="card prefs">
       <label class="pref">
         <span>Texto na barra do sistema</span>
@@ -36,10 +44,19 @@
         </select>
       </label>
       <div id="provider-bar"></div>
+
+    </section>
+    <h2 class="section">Alertas</h2>
+    <section class="card prefs">
       <label class="pref">
-        <span>Alertar ao passar de (%)</span>
-        <input type="text" id="thresholds" inputmode="numeric" placeholder="80, 95" />
+        <span>Sessão (5h): avisar ao passar de</span>
+        <input type="text" class="levels" data-window="session" inputmode="numeric" placeholder="80, 95" />
       </label>
+      <label class="pref">
+        <span>Semanal: avisar ao passar de</span>
+        <input type="text" class="levels" data-window="weekly" inputmode="numeric" placeholder="80, 95" />
+      </label>
+      <p class="muted">Porcentagens separadas por vírgula; cada uma avisa uma vez por janela. A primeira deixa a barra amarela e a última, vermelha. Deixe vazio para não avisar.</p>
       <div class="pref">
         <label><input type="checkbox" id="sound-needs-input" /> Som quando precisa de você</label>
         <button class="small" data-preview="needs_input" title="Ouvir">▶</button>
@@ -53,7 +70,27 @@
         <button class="small" data-preview="threshold" title="Ouvir">▶</button>
       </div>
     </section>
-    <footer id="updated" class="muted"></footer>
+    <h2 class="section">Widget flutuante</h2>
+    <section class="card prefs">
+      <div class="pref">
+        <label><input type="checkbox" id="widget-enabled" /> Mostrar widget sempre visível</label>
+        <button id="widget-move" class="text">Mover</button>
+      </div>
+      <label class="pref">
+        <span>Fundo</span>
+        <input type="range" id="widget-opacity" min="0" max="100" step="5" />
+      </label>
+      <p class="muted">O widget não recebe cliques: eles passam para o que está atrás. Use “Mover” para reposicioná-lo e clique duplo nele (ou “Fixar”) para prender.</p>
+    </section>
+    <h2 class="section">Atualizações</h2>
+    <section class="card prefs">
+      <div class="pref">
+        <label><input type="checkbox" id="check-updates" /> Verificar novas versões</label>
+        <button id="check-now" class="text">Verificar agora</button>
+      </div>
+      <p class="muted" id="update-status"></p>
+    </section>
+    </div>
     <script src="main.js"></script>
   </body>
 </html>

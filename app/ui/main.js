@@ -31,11 +31,18 @@ function resetText(iso) {
   return `reinicia em ${left} · ${when}`;
 }
 
-// Colors follow the user's alert levels: first level = warning, last = danger.
-let thresholds = [80, 95];
-function severity(pct) {
-  if (!thresholds.length) return "";
-  return pct >= thresholds[thresholds.length - 1] ? "danger" : pct >= thresholds[0] ? "warn" : "";
+// Colors follow the user's alert levels for each window type:
+// first level = warning, last = danger.
+let levels = { session: [80, 95], weekly: [80, 95] };
+function severity(pct, key = "session") {
+  const l = key === "session" ? levels.session : levels.weekly;
+  if (!l.length) return "";
+  return pct >= l[l.length - 1] ? "danger" : pct >= l[0] ? "warn" : "";
+}
+const RANK = { "": 0, warn: 1, danger: 2 };
+function worstSeverity(p) {
+  if (p?.status !== "ok") return "";
+  return p.windows.map((w) => severity(w.used_percent, w.key)).sort((a, b) => RANK[b] - RANK[a])[0] ?? "";
 }
 
 function staleNotice(p) {
@@ -56,7 +63,7 @@ function renderProvider(p) {
         (w) => `
         <div class="window">
           <div class="row"><span>${escapeHtml(w.label)}</span><strong>${w.used_percent.toFixed(0)}%</strong></div>
-          <div class="bar"><div class="fill ${severity(w.used_percent)}" style="width:${w.used_percent}%"></div></div>
+          <div class="bar"><div class="fill ${severity(w.used_percent, w.key)}" style="width:${w.used_percent}%"></div></div>
           <div class="muted">${resetText(w.resets_at)}</div>
         </div>`
       )
@@ -95,7 +102,7 @@ function providerIds() {
 
 function renderTabs() {
   const ids = providerIds();
-  if (activeTab !== "all" && !ids.includes(activeTab) && latest.length) activeTab = "all";
+  if (activeTab !== "all" && activeTab !== "settings" && !ids.includes(activeTab) && latest.length) activeTab = "all";
   const tab = (id, label, extra) => `
     <button role="tab" class="tab" data-tab="${escapeHtml(id)}"
       aria-selected="${id === activeTab}" tabindex="${id === activeTab ? 0 : -1}">
@@ -111,10 +118,14 @@ function renderTabs() {
       .map((id) => {
         const usage = latest.find((p) => p.provider === id);
         const pct = peakPercent(usage);
-        const pctBadge = pct == null ? "" : `<span class="pct ${severity(pct)}">${pct.toFixed(0)}%</span>`;
+        const pctBadge = pct == null ? "" : `<span class="pct ${worstSeverity(usage)}">${pct.toFixed(0)}%</span>`;
         return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)));
       })
-      .join("");
+      .join("") +
+    `<button role="tab" class="tab gear" data-tab="settings" title="Preferências" aria-label="Preferências"
+      aria-selected="${activeTab === "settings"}" tabindex="${activeTab === "settings" ? 0 : -1}">⚙</button>`;
+  document.getElementById("view-usage").hidden = activeTab === "settings";
+  document.getElementById("view-settings").hidden = activeTab !== "settings";
 }
 
 function render() {
@@ -139,7 +150,7 @@ document.getElementById("tabs").addEventListener("click", (e) => {
 
 document.getElementById("tabs").addEventListener("keydown", (e) => {
   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-  const ids = ["all", ...providerIds()];
+  const ids = ["all", ...providerIds(), "settings"];
   const i = ids.indexOf(activeTab);
   selectTab(ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length]);
 });
@@ -334,19 +345,73 @@ barReset.addEventListener("change", () => {
   renderProviderBar();
 });
 
-const thresholdInput = document.getElementById("thresholds");
-thresholdInput.addEventListener("change", async () => {
-  const values = thresholdInput.value.split(/[^0-9]+/).filter(Boolean).map(Number);
-  thresholds = await invoke("set_alert_thresholds", { thresholds: values });
-  thresholdInput.value = thresholds.join(", ");
-  render();
+const levelInputs = document.querySelectorAll(".levels");
+levelInputs.forEach((input) =>
+  input.addEventListener("change", async () => {
+    const values = input.value.split(/[^0-9]+/).filter(Boolean).map(Number);
+    const window = input.dataset.window;
+    levels[window] = await invoke("set_alert_thresholds", { window, thresholds: values });
+    input.value = levels[window].join(", ");
+    render();
+  })
+);
+
+// Updates: banner on the main view, status and manual check in settings.
+const updateBanner = document.getElementById("update-banner");
+const updateStatus = document.getElementById("update-status");
+function showUpdate(status) {
+  const u = status.update;
+  updateBanner.hidden = !u;
+  if (u) document.getElementById("update-text").textContent = `Nova versão ${u.version} disponível`;
+  updateStatus.textContent = status.error
+    ? `Versão ${status.current} · não foi possível verificar (${status.error})`
+    : u
+      ? `Versão ${status.current} · ${u.version} disponível`
+      : `Versão ${status.current} · nenhuma atualização encontrada`;
+}
+document.getElementById("update-open").addEventListener("click", () => invoke("open_update"));
+document.getElementById("check-now").addEventListener("click", async () => {
+  updateStatus.textContent = "Verificando…";
+  showUpdate(await invoke("check_updates_now"));
+});
+const checkUpdates = document.getElementById("check-updates");
+checkUpdates.addEventListener("change", () => invoke("set_check_updates", { enabled: checkUpdates.checked }));
+listen("update-status", (e) => showUpdate({ current: "", update: e.payload, error: null }));
+invoke("get_update").then(showUpdate);
+
+const widgetEnabled = document.getElementById("widget-enabled");
+const widgetMove = document.getElementById("widget-move");
+const widgetOpacity = document.getElementById("widget-opacity");
+let widgetMoving = false;
+
+function renderWidgetControls() {
+  widgetMove.disabled = !widgetEnabled.checked;
+  widgetMove.textContent = widgetMoving ? "Fixar" : "Mover";
+  widgetMove.classList.toggle("active", widgetMoving);
+}
+widgetEnabled.addEventListener("change", async () => {
+  await invoke("set_widget_enabled", { enabled: widgetEnabled.checked });
+  widgetMoving = false;
+  renderWidgetControls();
+});
+widgetMove.addEventListener("click", () => invoke("set_widget_moving", { moving: !widgetMoving }));
+widgetOpacity.addEventListener("input", () =>
+  invoke("set_widget_opacity", { opacity: Number(widgetOpacity.value) / 100 })
+);
+listen("widget-moving", (e) => {
+  widgetMoving = e.payload;
+  renderWidgetControls();
 });
 
 invoke("get_settings").then((settings) => {
+  widgetEnabled.checked = settings.widget.enabled;
+  widgetOpacity.value = Math.round(settings.widget.opacity * 100);
+  renderWidgetControls();
   barSettings = settings;
   barReset.value = settings.bar_reset;
-  thresholds = settings.alert_thresholds;
-  thresholdInput.value = thresholds.join(", ");
+  levels = { session: settings.alert_session, weekly: settings.alert_weekly };
+  levelInputs.forEach((input) => (input.value = levels[input.dataset.window].join(", ")));
+  checkUpdates.checked = settings.check_updates;
   soundToggles.threshold.checked = settings.sound_threshold;
   render();
   renderProviderBar();

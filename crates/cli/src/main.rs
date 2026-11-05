@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use chrono::{Local, Utc};
 use ia_usage_core::hook_install::{self, Target};
-use ia_usage_core::{fetch_all, list_sessions, ProviderStatus, ProviderUsage, SessionState};
+use ia_usage_core::{list_sessions, Poller, ProviderStatus, ProviderUsage, SessionState};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -39,8 +39,11 @@ fn run_usage(args: &[String]) {
             .unwrap_or(60u64)
     });
 
+    // Shares the app's cache and cooldowns, so running both never doubles
+    // the requests to the rate-limited usage endpoints.
+    let mut poller = Poller::default();
     loop {
-        let usage = fetch_all();
+        let usage = poller.poll();
         if json {
             println!("{}", serde_json::to_string(&usage).expect("serializable"));
         } else {

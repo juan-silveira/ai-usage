@@ -104,7 +104,19 @@ input[type="checkbox"] { accent-color: var(--ok); }
   background: #2b2b2b; color: #eee; padding: 2px 8px; border-radius: 4px; }
 .preview img { width: 14px; height: 14px; }
 .stale { margin: 8px 0 0; font-size: 11px; color: var(--warn); }
-#thresholds {
+.levels {
   font: inherit; font-size: 12px; width: 90px; padding: 3px 6px; color: var(--text);
   background: var(--bg); border: 1px solid var(--track); border-radius: 6px; text-align: right;
+}
+button.text { width: auto; height: 24px; padding: 0 10px; font-size: 12px; background: var(--bg); }
+button.text:disabled { opacity: .4; cursor: default; }
+button.text.active { background: var(--ok); color: #fff; }
+input[type="range"] { width: 55%; accent-color: var(--ok); }
+.prefs p.muted { margin: 0; }
+.tab.gear { flex: 0 0 36px; font-size: 15px; padding: 0; }
+[hidden] { display: none !important; }
+#update-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 8px 0 0; padding: 8px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--ok) 18%, var(--card)); font-size: 12px;
 }

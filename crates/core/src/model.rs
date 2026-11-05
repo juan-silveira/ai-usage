@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One rate-limit window (e.g. the 5-hour session or the weekly cap).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageWindow {
     /// Stable identifier, e.g. "session", "weekly", "weekly_opus".
     pub key: String,
@@ -13,7 +13,7 @@ pub struct UsageWindow {
     pub resets_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ProviderStatus {
     Ok {
@@ -32,7 +32,7 @@ pub enum ProviderStatus {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderUsage {
     pub provider: String,
     pub display_name: String,
@@ -43,11 +43,11 @@ pub struct ProviderUsage {
     pub status: ProviderStatus,
     /// Set when this is the last good result being shown because a newer
     /// fetch failed or is being held back.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stale: Option<Stale>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stale {
     pub reason: String,
     /// When the next fetch will be attempted, if it is being held back.

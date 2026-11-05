@@ -197,6 +197,13 @@ fn peak_window(windows: &[UsageWindow]) -> Option<&UsageWindow> {
 
 const WEEKDAYS: [&str; 7] = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
 
+/// "ter 23:00" in local time, with Portuguese weekday names.
+pub fn local_day_time(at: DateTime<Utc>) -> String {
+    let local = at.with_timezone(&Local);
+    let day = WEEKDAYS[local.weekday().num_days_from_monday() as usize];
+    format!("{day} {}", local.format("%H:%M"))
+}
+
 fn reset_text(w: &UsageWindow, mode: BarReset, now: DateTime<Utc>) -> Option<String> {
     let at = w.resets_at?;
     let secs = (at - now).num_seconds().max(0);
@@ -207,15 +214,11 @@ fn reset_text(w: &UsageWindow, mode: BarReset, now: DateTime<Utc>) -> Option<Str
             3600..=86_399 => format!("{}h{:02}", secs / 3600, (secs % 3600) / 60),
             _ => format!("{}d{}h", secs / 86_400, (secs % 86_400) / 3600),
         }),
-        BarReset::Clock => {
-            let local = at.with_timezone(&Local);
-            Some(if secs < 86_400 {
-                local.format("%H:%M").to_string()
-            } else {
-                let day = WEEKDAYS[local.weekday().num_days_from_monday() as usize];
-                format!("{day} {}", local.format("%H:%M"))
-            })
-        }
+        BarReset::Clock => Some(if secs < 86_400 {
+            at.with_timezone(&Local).format("%H:%M").to_string()
+        } else {
+            local_day_time(at)
+        }),
     }
 }
 

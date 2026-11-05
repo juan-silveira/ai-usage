@@ -104,6 +104,22 @@ No Cinnamon (Linux Mint) o app usa o ícone nativo XApp (via libxapp), pois o
 `xapp-sn-watcher` descarta o texto de ícones AppIndicator. No macOS o texto
 aparece ao lado do ícone; no Windows a bandeja só exibe ícone e tooltip.
 
+Faixas de alerta de uso, separadas para a sessão (5 h) e a semanal (ex.: sessão
+`80, 95`, semanal `90`): cada faixa notifica uma vez por janela, com som próprio,
+e define as cores (primeira = amarelo, última = vermelho).
+
+Widget flutuante (opcional): janela transparente, sempre visível, que não
+recebe cliques (eles passam para o que está atrás). Para reposicionar, use
+"Mover" nas preferências, arraste e dê clique duplo para fixar.
+
+O app consulta as releases do GitHub ao iniciar e a cada 12 h e avisa quando há
+versão nova (banner + notificação com link para baixar).
+
+Os endpoints de uso têm limite de consultas: em HTTP 429 o app respeita o
+`Retry-After` (1–30 min, com recuo exponencial) e continua mostrando os últimos
+dados, marcados como desatualizados. O estado fica num cache em disco
+compartilhado entre app e CLI, então reiniciar o app não gera consultas extras.
+
 Alertas sonoros (gerados pelo app, sem arquivos de áudio): um sino curto e
 insistente quando uma sessão precisa de você e um arpejo quando conclui.
 Cada um pode ser desligado e ouvido nas preferências.
@@ -117,7 +133,10 @@ Cada um pode ser desligado e ouvido nas preferências.
 - [ ] Mais provedores: Gemini CLI, Cursor, Copilot, OpenRouter
 - [x] Uso na barra do sistema com logo do provedor e nome personalizável
 - [x] Alertas sonoros
-- [ ] Notificação ao passar de 80 % / 95 %
+- [x] Faixas de alerta de uso por janela
+- [x] Widget flutuante transparente e com clique atravessando
+- [x] Aviso de nova versão (GitHub Releases)
+- [ ] Instalação automática de atualizações (tauri-plugin-updater + releases assinadas no CI)
 - [ ] Iniciar com o sistema
 - [ ] CI com builds para os três SOs
 

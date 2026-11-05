@@ -4,7 +4,9 @@
 mod alerts;
 mod bar;
 mod sound;
+mod updates;
 mod usage_alerts;
+mod widget;
 #[cfg(target_os = "linux")]
 mod xapp_tray;
 
@@ -20,16 +22,20 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
 
 use alerts::{AlertKind, AlertTracker};
 use bar::{BarFormat, BarItem, BarReset, ProviderBar};
 use sound::Sound;
+use updates::UpdateInfo;
 use usage_alerts::ThresholdTracker;
+use widget::WidgetSettings;
 
 const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 /// Session files are tiny and local, so they can be scanned often.
 const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const TRAY_PREFIX: &str = "bar-";
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Settings {
@@ -41,14 +47,25 @@ struct Settings {
     #[serde(default)]
     bar_reset: BarReset,
     /// Usage levels (%) that trigger an alert, ascending.
+    /// Alert levels (%) for the 5-hour session window, ascending.
     #[serde(default = "default_thresholds")]
-    alert_thresholds: Vec<u8>,
+    alert_session: Vec<u8>,
+    /// Alert levels (%) for weekly windows (including per-model ones).
+    #[serde(default = "default_thresholds")]
+    alert_weekly: Vec<u8>,
     #[serde(default = "enabled")]
     sound_needs_input: bool,
     #[serde(default = "enabled")]
     sound_done: bool,
     #[serde(default = "enabled")]
     sound_threshold: bool,
+    #[serde(default)]
+    widget: WidgetSettings,
+    #[serde(default = "enabled")]
+    check_updates: bool,
+    /// Last version announced, so each release notifies only once.
+    #[serde(default)]
+    update_notified: Option<String>,
 }
 
 fn default_thresholds() -> Vec<u8> {
@@ -65,10 +82,14 @@ impl Default for Settings {
             bar_format: BarFormat::default(),
             providers: BTreeMap::new(),
             bar_reset: BarReset::default(),
-            alert_thresholds: default_thresholds(),
+            alert_session: default_thresholds(),
+            alert_weekly: default_thresholds(),
             sound_needs_input: true,
             sound_done: true,
             sound_threshold: true,
+            widget: WidgetSettings::default(),
+            check_updates: true,
+            update_notified: None,
         }
     }
 }
@@ -105,6 +126,7 @@ struct Snapshot {
     alerts: Mutex<AlertTracker>,
     settings: Mutex<Settings>,
     poller: Mutex<Poller>,
+    update: Mutex<Option<UpdateInfo>>,
     thresholds: Mutex<ThresholdTracker>,
     /// Tray icons currently shown by the Tauri backend: id -> icon bytes ptr.
     tray_icons: Mutex<Vec<(String, Option<usize>)>>,
@@ -214,10 +236,18 @@ fn set_bar_reset(app: AppHandle, state: State<Snapshot>, reset: BarReset) -> Res
     settings.save(&app).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AlertWindow {
+    Session,
+    Weekly,
+}
+
 #[tauri::command]
 fn set_alert_thresholds(
     app: AppHandle,
     state: State<Snapshot>,
+    window: AlertWindow,
     thresholds: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
     let mut clean: Vec<u8> = thresholds
@@ -229,12 +259,133 @@ fn set_alert_thresholds(
     clean.truncate(5);
     let settings = {
         let mut s = state.settings.lock().unwrap();
-        s.alert_thresholds = clean.clone();
+        match window {
+            AlertWindow::Session => s.alert_session = clean.clone(),
+            AlertWindow::Weekly => s.alert_weekly = clean.clone(),
+        }
         s.clone()
     };
     let _ = app.emit("settings-updated", &settings);
     settings.save(&app).map_err(|e| e.to_string())?;
     Ok(clean)
+}
+
+/// Applies a change to the settings, saves them and tells every window.
+fn change_settings(
+    app: &AppHandle,
+    change: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
+    let settings = {
+        let snapshot = app.state::<Snapshot>();
+        let mut s = snapshot.settings.lock().unwrap();
+        change(&mut s);
+        s.clone()
+    };
+    let _ = app.emit("settings-updated", &settings);
+    settings.save(app).map_err(|e| e.to_string())?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn set_widget_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let settings = change_settings(&app, |s| s.widget.enabled = enabled)?;
+    if enabled {
+        widget::open(&app, &settings.widget).map_err(|e| e.to_string())
+    } else {
+        widget::close(&app);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+fn set_widget_opacity(app: AppHandle, opacity: f64) -> Result<(), String> {
+    change_settings(&app, |s| s.widget.opacity = opacity.clamp(0.0, 1.0)).map(|_| ())
+}
+
+#[tauri::command]
+fn set_widget_moving(app: AppHandle, moving: bool) -> Result<(), String> {
+    if let Some(pos) = widget::set_moving(&app, moving) {
+        change_settings(&app, |s| {
+            s.widget.x = Some(pos.x);
+            s.widget.y = Some(pos.y);
+        })?;
+    }
+    let _ = app.emit("widget-moving", moving);
+    Ok(())
+}
+
+#[tauri::command]
+fn widget_fit(app: AppHandle, width: f64, height: f64) {
+    widget::fit(&app, width, height);
+}
+
+#[derive(Serialize)]
+struct UpdateStatus {
+    current: &'static str,
+    update: Option<UpdateInfo>,
+    error: Option<String>,
+}
+
+/// Checks GitHub now; on a new version, notifies once per release.
+fn check_updates(app: &AppHandle) -> UpdateStatus {
+    let result = updates::check();
+    let snapshot = app.state::<Snapshot>();
+    if let Ok(found) = &result {
+        *snapshot.update.lock().unwrap() = found.clone();
+        let _ = app.emit("update-status", found);
+    }
+    if let Ok(Some(info)) = &result {
+        let already = snapshot.settings.lock().unwrap().update_notified.clone();
+        if already.as_deref() != Some(info.version.as_str()) {
+            let _ = app
+                .notification()
+                .builder()
+                .title(format!("IA Usage {} disponível", info.version))
+                .body("Abra a janela do IA Usage para baixar a nova versão.")
+                .show();
+            let version = info.version.clone();
+            let _ = change_settings(app, |s| s.update_notified = Some(version));
+        }
+    }
+    UpdateStatus {
+        current: updates::CURRENT,
+        update: result.as_ref().ok().cloned().flatten(),
+        error: result.err(),
+    }
+}
+
+#[tauri::command]
+async fn check_updates_now(app: AppHandle) -> UpdateStatus {
+    tauri::async_runtime::spawn_blocking(move || check_updates(&app))
+        .await
+        .unwrap_or(UpdateStatus {
+            current: updates::CURRENT,
+            update: None,
+            error: Some("falha ao verificar".into()),
+        })
+}
+
+#[tauri::command]
+fn get_update(state: State<Snapshot>) -> UpdateStatus {
+    UpdateStatus {
+        current: updates::CURRENT,
+        update: state.update.lock().unwrap().clone(),
+        error: None,
+    }
+}
+
+#[tauri::command]
+fn set_check_updates(app: AppHandle, enabled: bool) -> Result<(), String> {
+    change_settings(&app, |s| s.check_updates = enabled).map(|_| ())
+}
+
+#[tauri::command]
+fn open_update(app: AppHandle, state: State<Snapshot>) -> Result<(), String> {
+    let url = state.update.lock().unwrap().as_ref().map(|u| u.url.clone());
+    let url = url.unwrap_or_else(|| format!("https://github.com/{}/releases", updates::REPO));
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -253,11 +404,11 @@ fn poll_usage(app: &AppHandle) {
     *snapshot.usage.lock().unwrap() = usage.clone();
 
     let settings = snapshot.settings.lock().unwrap().clone();
-    let alerts = snapshot
-        .thresholds
-        .lock()
-        .unwrap()
-        .update(&usage, &settings.alert_thresholds);
+    let alerts = snapshot.thresholds.lock().unwrap().update(
+        &usage,
+        &settings.alert_session,
+        &settings.alert_weekly,
+    );
     if settings.sound_threshold && !alerts.is_empty() {
         sound::play(Sound::Threshold);
     }
@@ -423,6 +574,7 @@ fn build_menu(app: &mut tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(Snapshot::default())
         .invoke_handler(tauri::generate_handler![
             get_usage,
@@ -433,6 +585,14 @@ fn main() {
             set_provider_bar,
             set_bar_reset,
             set_alert_thresholds,
+            set_widget_enabled,
+            set_widget_opacity,
+            set_widget_moving,
+            widget_fit,
+            check_updates_now,
+            get_update,
+            set_check_updates,
+            open_update,
             set_sound_enabled,
             preview_sound,
             refresh_now
@@ -462,11 +622,38 @@ fn main() {
                 _ => {}
             });
             update_tray(app.handle());
+            let widget_settings = app
+                .state::<Snapshot>()
+                .settings
+                .lock()
+                .unwrap()
+                .widget
+                .clone();
+            if widget_settings.enabled {
+                let _ = widget::open(app.handle(), &widget_settings);
+            }
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 poll_usage(&handle);
                 std::thread::sleep(USAGE_POLL_INTERVAL);
+            });
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                // Give the first usage poll and the window a head start.
+                std::thread::sleep(Duration::from_secs(30));
+                loop {
+                    let enabled = handle
+                        .state::<Snapshot>()
+                        .settings
+                        .lock()
+                        .unwrap()
+                        .check_updates;
+                    if enabled {
+                        check_updates(&handle);
+                    }
+                    std::thread::sleep(UPDATE_CHECK_INTERVAL);
+                }
             });
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -478,6 +665,9 @@ fn main() {
         .on_window_event(|window, event| {
             // Closing the window keeps the app alive in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == widget::LABEL {
+                    return;
+                }
                 api.prevent_close();
                 let _ = window.hide();
             }
