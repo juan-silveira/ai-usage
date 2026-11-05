@@ -106,7 +106,8 @@ aparece ao lado do ícone; no Windows a bandeja só exibe ícone e tooltip.
 
 Faixas de alerta de uso, separadas para a sessão (5 h) e a semanal (ex.: sessão
 `80, 95`, semanal `90`): cada faixa notifica uma vez por janela, com som próprio,
-e define as cores (primeira = amarelo, última = vermelho).
+e define as cores: verde abaixo da primeira faixa, amarelo a partir dela e
+vermelho só em 100%.
 
 Widget flutuante (opcional): janela transparente, sempre visível, que não
 recebe cliques (eles passam para o que está atrás). Para reposicionar, use

@@ -31,13 +31,13 @@ function resetText(iso) {
   return `reinicia em ${left} · ${when}`;
 }
 
-// Colors follow the user's alert levels for each window type:
-// first level = warning, last = danger.
+// Green below the window's first alert level, yellow from it, red only when
+// the window is used up (100%).
 let levels = { session: [80, 95], weekly: [80, 95] };
 function severity(pct, key = "session") {
   const l = key === "session" ? levels.session : levels.weekly;
-  if (!l.length) return "";
-  return pct >= l[l.length - 1] ? "danger" : pct >= l[0] ? "warn" : "";
+  if (pct >= 100) return "danger";
+  return l.length && pct >= l[0] ? "warn" : "";
 }
 const RANK = { "": 0, warn: 1, danger: 2 };
 function worstSeverity(p) {

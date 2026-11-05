@@ -13,8 +13,8 @@ function escapeHtml(s) {
 
 function severity(pct, key) {
   const l = key === "session" ? levels.session : levels.weekly;
-  if (!l.length) return "";
-  return pct >= l[l.length - 1] ? "danger" : pct >= l[0] ? "warn" : "";
+  if (pct >= 100) return "danger";
+  return l.length && pct >= l[0] ? "warn" : "";
 }
 
 function left(iso) {
