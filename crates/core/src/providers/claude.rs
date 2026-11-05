@@ -77,7 +77,12 @@ fn load_credentials() -> Option<Credentials> {
 #[cfg(target_os = "macos")]
 fn read_keychain() -> Option<String> {
     let out = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output()
         .ok()?;
     out.status
@@ -203,7 +208,8 @@ mod tests {
 
     #[test]
     fn reads_credentials_file_format() {
-        let raw = r#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":123,"subscriptionType":"max"}}"#;
+        let raw =
+            r#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":123,"subscriptionType":"max"}}"#;
         let c = parse_credentials(raw).unwrap();
         assert_eq!(c.access_token, "tok");
         assert_eq!(c.expires_at_ms, Some(123));

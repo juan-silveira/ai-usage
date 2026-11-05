@@ -16,12 +16,16 @@ pub struct UsageWindow {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum ProviderStatus {
-    Ok { windows: Vec<UsageWindow> },
+    Ok {
+        windows: Vec<UsageWindow>,
+    },
     /// The CLI is not installed or the user never logged in.
     NoCredentials,
     /// The stored token expired; the provider's own CLI must refresh it.
     TokenExpired,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,9 +1,13 @@
 # IA Usage
 
 Monitor de uso das assinaturas de IA (Claude Code, OpenAI Codex, …) para
-**Linux, Windows e macOS**. Fica na bandeja do sistema, atualiza a cada
-minuto e mostra o mesmo que o `/usage` do Claude Code: janela de 5 h,
-limite semanal, limites por modelo e quando cada um reinicia.
+**Linux, Windows e macOS**. Fica na bandeja do sistema e mostra:
+
+- **Limites** (a cada minuto): o mesmo que o `/usage` do Claude Code — janela
+  de 5 h, limite semanal, limites por modelo e quando cada um reinicia.
+- **Sessões ao vivo** (via hooks): cada sessão do Claude Code / Codex aberta,
+  se está trabalhando, concluída ou **esperando você** — com notificação na
+  hora e lembrete a cada 2 min até você responder.
 
 Não pede senha nem login próprio: reaproveita as credenciais que as CLIs
 já guardam na máquina, **somente leitura** (nunca renova nem reescreve
@@ -28,6 +32,38 @@ app/ui           frontend estático (HTML/CSS/JS, sem build)
 Ambos os endpoints são internos/não documentados e podem mudar.
 Para adicionar um provedor, implemente o trait `Provider` em
 `crates/core/src/providers/` e registre-o em `all_providers()`.
+
+## Sessões e alertas
+
+O comando `ia-usage hook <claude|codex>` é registrado como hook dos agentes.
+A cada evento (prompt enviado, ferramenta usada, pedido de permissão, turno
+concluído, sessão encerrada) ele grava um JSON pequeno por sessão em
+`~/.local/state/ia-usage/sessions/` (Linux), `~/Library/Application Support/ia-usage/sessions/`
+(macOS) ou `%LOCALAPPDATA%\ia-usage\sessions\` (Windows). O app lê essa pasta
+a cada 2 s; o hook nunca falha nem imprime nada, então não atrapalha o agente
+mesmo com o app fechado.
+
+| Evento do agente | Estado |
+|---|---|
+| `SessionStart` | ociosa |
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse` | trabalhando |
+| `Notification` (permissão/pergunta), `PermissionRequest` | **precisa de você** → alerta + lembrete a cada 2 min (máx. 5) |
+| `Stop` | concluída → alerta (🎉 se o turno durou ≥ 5 min) |
+| `SessionEnd` | removida |
+
+Clicar numa sessão "precisa de você" na janela silencia os lembretes.
+
+```sh
+cargo install --path crates/cli   # instala o binário em ~/.cargo/bin/ia-usage
+ia-usage hooks install            # Claude (~/.claude/settings.json) e Codex (~/.codex/hooks.json)
+ia-usage hooks install claude     # só um provedor
+ia-usage hooks status
+ia-usage sessions                 # lista as sessões no terminal
+ia-usage hooks uninstall          # remove só as entradas do ia-usage
+```
+
+A instalação mescla com o que já existe (outros hooks e configurações ficam
+intactos), é idempotente e guarda um backup `*.ia-usage.bak` do arquivo original.
 
 ## Uso
 
@@ -60,7 +96,9 @@ abre o menu (atualizar agora, sair). Fechar a janela mantém o app na bandeja.
 
 ## Roadmap
 
-- [ ] Estado das sessões ativas (trabalhando / esperando você / concluída) via hooks do Claude Code e eventos do Codex, com alertas
+- [x] Estado das sessões ativas via hooks, com alertas e lembretes
+- [ ] Modo foco / reunião (silenciar alertas), som configurável
+- [ ] Clicar na notificação foca o terminal da sessão
 - [ ] API local (HTTP/WebSocket) para widgets e displays externos
 - [ ] Mais provedores: Gemini CLI, Cursor, Copilot, OpenRouter
 - [ ] Ícone da bandeja com a porcentagem desenhada

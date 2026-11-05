@@ -1,40 +1,111 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
-use std::time::Duration;
+mod alerts;
 
-use ia_usage_core::{fetch_all, ProviderUsage};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use ia_usage_core::{fetch_all, list_sessions, ProviderUsage, Session, SessionState};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
 
-const POLL_INTERVAL: Duration = Duration::from_secs(60);
+use alerts::AlertTracker;
+
+const USAGE_POLL_INTERVAL: Duration = Duration::from_secs(60);
+/// Session files are tiny and local, so they can be scanned often.
+const SESSION_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const TRAY_ID: &str = "main";
 
-/// Latest poll result, so a freshly opened window can render immediately.
+/// Latest results, so a freshly opened window can render immediately.
 #[derive(Default)]
-struct Snapshot(Mutex<Vec<ProviderUsage>>);
+struct Snapshot {
+    usage: Mutex<Vec<ProviderUsage>>,
+    sessions: Mutex<Vec<Session>>,
+    alerts: Mutex<AlertTracker>,
+}
 
 #[tauri::command]
 fn get_usage(state: State<Snapshot>) -> Vec<ProviderUsage> {
-    state.0.lock().unwrap().clone()
+    state.usage.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_sessions(state: State<Snapshot>) -> Vec<Session> {
+    state.sessions.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn acknowledge_session(state: State<Snapshot>, key: String) {
+    state.alerts.lock().unwrap().acknowledge(&key);
 }
 
 #[tauri::command]
 fn refresh_now(app: AppHandle) {
-    std::thread::spawn(move || poll_once(&app));
+    std::thread::spawn(move || poll_usage(&app));
 }
 
-fn poll_once(app: &AppHandle) {
+fn poll_usage(app: &AppHandle) {
     let usage = fetch_all();
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(tooltip(&usage)));
-        // Shown next to the icon on macOS and on Linux AppIndicator panels.
-        let _ = tray.set_title(Some(short_title(&usage)));
-    }
-    *app.state::<Snapshot>().0.lock().unwrap() = usage.clone();
+    *app.state::<Snapshot>().usage.lock().unwrap() = usage.clone();
+    update_tray(app);
     let _ = app.emit("usage-updated", &usage);
+}
+
+fn poll_sessions(app: &AppHandle) {
+    let sessions = list_sessions();
+    let snapshot = app.state::<Snapshot>();
+    let alerts = snapshot
+        .alerts
+        .lock()
+        .unwrap()
+        .update(&sessions, Instant::now());
+    for alert in alerts {
+        let _ = app
+            .notification()
+            .builder()
+            .title(alert.title)
+            .body(alert.body)
+            .show();
+    }
+
+    let changed = {
+        let mut current = snapshot.sessions.lock().unwrap();
+        let changed = serde_json::to_value(&*current).ok() != serde_json::to_value(&sessions).ok();
+        *current = sessions.clone();
+        changed
+    };
+    if changed {
+        update_tray(app);
+        let _ = app.emit("sessions-updated", &sessions);
+    }
+}
+
+fn update_tray(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    let snapshot = app.state::<Snapshot>();
+    let usage = snapshot.usage.lock().unwrap().clone();
+    let waiting = snapshot
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|s| s.state == SessionState::NeedsInput)
+        .count();
+
+    let mut title = short_title(&usage);
+    let mut tip = tooltip(&usage);
+    if waiting > 0 {
+        title = format!("⚠{waiting} {title}");
+        tip = format!("{tip}\n{waiting} sessão(ões) esperando você");
+    }
+    let _ = tray.set_tooltip(Some(tip));
+    // Shown next to the icon on macOS and on Linux AppIndicator panels.
+    let _ = tray.set_title(Some(title));
 }
 
 fn short_title(usage: &[ProviderUsage]) -> String {
@@ -72,8 +143,14 @@ fn toggle_window(app: &AppHandle) {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(Snapshot::default())
-        .invoke_handler(tauri::generate_handler![get_usage, refresh_now])
+        .invoke_handler(tauri::generate_handler![
+            get_usage,
+            get_sessions,
+            acknowledge_session,
+            refresh_now
+        ])
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "Mostrar / ocultar", true, None::<&str>)?;
             let refresh = MenuItem::with_id(app, "refresh", "Atualizar agora", true, None::<&str>)?;
@@ -105,8 +182,13 @@ fn main() {
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
-                poll_once(&handle);
-                std::thread::sleep(POLL_INTERVAL);
+                poll_usage(&handle);
+                std::thread::sleep(USAGE_POLL_INTERVAL);
+            });
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                poll_sessions(&handle);
+                std::thread::sleep(SESSION_POLL_INTERVAL);
             });
             Ok(())
         })

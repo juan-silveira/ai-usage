@@ -104,7 +104,10 @@ fn parse_credentials(raw: &str) -> Option<Credentials> {
 fn jwt_expiry(token: &str) -> Option<i64> {
     let payload = token.split('.').nth(1)?;
     let bytes = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
-    serde_json::from_slice::<Value>(&bytes).ok()?.get("exp")?.as_i64()
+    serde_json::from_slice::<Value>(&bytes)
+        .ok()?
+        .get("exp")?
+        .as_i64()
 }
 
 fn parse_usage(body: &Value) -> ProviderStatus {
