@@ -17,7 +17,31 @@ const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// by length rather than by slot.
 const WEEKLY_THRESHOLD_SECS: i64 = 86_400;
 
-pub struct Codex;
+#[derive(Clone, Copy)]
+pub enum Codex {
+    Primary,
+    Second,
+    Third,
+}
+
+impl Codex {
+    pub const ACCOUNTS: [Self; 3] = [Self::Primary, Self::Second, Self::Third];
+
+    pub fn home(self) -> Option<PathBuf> {
+        match self {
+            Self::Primary => std::env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .or_else(|| dirs::home_dir().map(|h| h.join(".codex"))),
+            _ => crate::sessions::state_dir().and_then(|d| {
+                d.parent().map(|p| p.join("codex-accounts").join(self.id()))
+            }),
+        }
+    }
+
+    fn auth_path(self) -> Option<PathBuf> {
+        self.home().map(|h| h.join("auth.json"))
+    }
+}
 
 struct Credentials {
     access_token: String,
@@ -26,15 +50,36 @@ struct Credentials {
 
 impl Provider for Codex {
     fn id(&self) -> &'static str {
-        "codex"
+        match self {
+            Self::Primary => "codex",
+            Self::Second => "codex-2",
+            Self::Third => "codex-3",
+        }
     }
 
     fn display_name(&self) -> &'static str {
-        "Codex"
+        match self {
+            Self::Primary => "Codex 1",
+            Self::Second => "Codex 2",
+            Self::Third => "Codex 3",
+        }
+    }
+
+    fn cache_revision(&self) -> Option<String> {
+        let revision = self.auth_path().and_then(|path| {
+            let metadata = std::fs::metadata(&path).ok()?;
+            let modified = metadata.modified().ok()?;
+            Some(format!("{path:?}:{modified:?}:{}", metadata.len()))
+        });
+        Some(revision.unwrap_or_else(|| "disconnected".into()))
     }
 
     fn poll(&self) -> (Option<String>, ProviderStatus) {
-        let Some(creds) = load_credentials() else {
+        let Some(creds) = self
+            .auth_path()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|raw| parse_credentials(&raw))
+        else {
             return (None, ProviderStatus::NoCredentials);
         };
         if jwt_expiry(&creds.access_token).is_some_and(|exp| exp <= Utc::now().timestamp()) {
@@ -68,18 +113,6 @@ impl Provider for Codex {
             Err(e) => (None, status_from_http_error(e)),
         }
     }
-}
-
-fn auth_path() -> Option<PathBuf> {
-    std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".codex")))
-        .map(|d| d.join("auth.json"))
-}
-
-fn load_credentials() -> Option<Credentials> {
-    let raw = std::fs::read_to_string(auth_path()?).ok()?;
-    parse_credentials(&raw)
 }
 
 fn parse_credentials(raw: &str) -> Option<Credentials> {

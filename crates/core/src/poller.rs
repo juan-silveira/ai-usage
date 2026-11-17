@@ -29,6 +29,8 @@ const MIN_FETCH_INTERVAL_SECS: i64 = 55;
 
 #[derive(Default, Serialize, Deserialize)]
 struct ProviderState {
+    #[serde(default)]
+    revision: Option<String>,
     last_ok: Option<ProviderUsage>,
     next_attempt: Option<DateTime<Utc>>,
     rate_limited: u32,
@@ -46,14 +48,18 @@ pub struct Poller {
 impl Default for Poller {
     /// All providers, with the shared on-disk cache.
     fn default() -> Self {
-        let mut poller = Self::new(all_providers());
-        poller.cache = crate::sessions::state_dir()
-            .and_then(|d| d.parent().map(|p| p.join("usage-cache.json")));
-        poller
+        Self::with_shared_cache(all_providers())
     }
 }
 
 impl Poller {
+    pub fn with_shared_cache(providers: Vec<Box<dyn Provider>>) -> Self {
+        let mut poller = Self::new(providers);
+        poller.cache = crate::sessions::state_dir()
+            .and_then(|d| d.parent().map(|p| p.join("usage-cache.json")));
+        poller
+    }
+
     /// A poller without disk cache (tests, embedding).
     pub fn new(providers: Vec<Box<dyn Provider>>) -> Self {
         Self {
@@ -75,6 +81,13 @@ impl Poller {
                     return off(p.as_ref());
                 }
                 let state = self.state.entry(p.id().to_string()).or_default();
+                let revision = p.cache_revision();
+                if state.revision != revision {
+                    *state = ProviderState {
+                        revision,
+                        ..ProviderState::default()
+                    };
+                }
                 let fresh = state.last_ok.as_ref().filter(|last| {
                     now - last.fetched_at < Duration::seconds(MIN_FETCH_INTERVAL_SECS)
                 });
@@ -115,7 +128,16 @@ impl Poller {
             return;
         };
         for (id, theirs) in disk {
-            let ours = self.state.entry(id).or_default();
+            let ours = match self.state.entry(id) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(theirs);
+                    continue;
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            };
+            if ours.revision != theirs.revision {
+                continue;
+            }
             let newer = |t: &ProviderState, o: &ProviderState| match (&t.last_ok, &o.last_ok) {
                 (Some(t), Some(o)) => t.fetched_at > o.fetched_at,
                 (Some(_), None) => true,
@@ -250,6 +272,7 @@ mod tests {
     struct Fake {
         queue: Arc<Mutex<Vec<ProviderStatus>>>,
         calls: Arc<Mutex<u32>>,
+        revision: Option<Arc<Mutex<String>>>,
     }
 
     impl Provider for Fake {
@@ -258,6 +281,9 @@ mod tests {
         }
         fn display_name(&self) -> &'static str {
             "Fake"
+        }
+        fn cache_revision(&self) -> Option<String> {
+            self.revision.as_ref().map(|r| r.lock().unwrap().clone())
         }
         fn poll(&self) -> (Option<String>, ProviderStatus) {
             *self.calls.lock().unwrap() += 1;
@@ -293,6 +319,7 @@ mod tests {
         let mut poller = Poller::new(vec![Box::new(Fake {
             queue,
             calls: calls.clone(),
+            revision: None,
         })]);
         poller.poll();
         assert_eq!(poller.poll()[0].peak_percent(), Some(10.0));
@@ -311,6 +338,7 @@ mod tests {
         let mut poller = Poller::new(vec![Box::new(Fake {
             queue: queue.clone(),
             calls: calls.clone(),
+            revision: None,
         })]);
 
         assert!(poller.poll()[0].stale.is_none());
@@ -339,6 +367,7 @@ mod tests {
         let mut poller = Poller::new(vec![Box::new(Fake {
             queue,
             calls: calls.clone(),
+            revision: None,
         })]);
         poller.poll();
         age(&mut poller);
@@ -346,5 +375,32 @@ mod tests {
         let r = &poller.poll()[0];
         assert!(r.stale.is_none());
         assert_eq!(r.peak_percent(), Some(12.0));
+    }
+
+    #[test]
+    fn changing_login_drops_previous_usage_even_during_cooldown() {
+        let revision = Arc::new(Mutex::new("first".to_string()));
+        let mut poller = Poller::new(vec![Box::new(Fake {
+            queue: Arc::new(Mutex::new(vec![
+                ok(10.0),
+                ProviderStatus::RateLimited {
+                    retry_after_secs: Some(120),
+                },
+                ok(65.0),
+                ProviderStatus::NoCredentials,
+            ])),
+            calls: Arc::new(Mutex::new(0)),
+            revision: Some(revision.clone()),
+        })]);
+        assert_eq!(poller.poll()[0].peak_percent(), Some(10.0));
+        age(&mut poller);
+        assert!(poller.poll()[0].stale.is_some());
+        *revision.lock().unwrap() = "second".into();
+        assert_eq!(poller.poll()[0].peak_percent(), Some(65.0));
+        *revision.lock().unwrap() = "disconnected".into();
+        assert!(matches!(
+            poller.poll()[0].status,
+            ProviderStatus::NoCredentials
+        ));
     }
 }

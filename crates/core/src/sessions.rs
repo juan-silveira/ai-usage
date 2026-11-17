@@ -4,6 +4,7 @@
 //! file per session in the state directory. The desktop app only reads these
 //! files, so hooks keep working (and never block the agent) while it is closed.
 
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, Utc};
@@ -20,6 +21,7 @@ const STALE_AFTER_HOURS: i64 = 12;
 pub enum DetailKind {
     /// Asking permission; `detail` holds the tool, if known.
     Permission,
+    Question,
     /// The turn ended with an error.
     Failed,
     Interrupted,
@@ -38,7 +40,13 @@ pub enum SessionState {
     Done,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingQuestion {
+    pub request_id: String,
+    pub requested_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     pub provider: String,
     pub session_id: String,
@@ -53,11 +61,41 @@ pub struct Session {
     /// only its argument, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail_kind: Option<DetailKind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_questions: Vec<PendingQuestion>,
     pub model: Option<String>,
     pub turn_started_at: Option<DateTime<Utc>>,
     /// Length of the last completed turn, in seconds.
     pub last_turn_secs: Option<i64>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl Session {
+    pub(crate) fn new(provider: &str, session_id: &str, cwd: &str, now: DateTime<Utc>) -> Self {
+        Self {
+            provider: provider.to_owned(),
+            session_id: session_id.to_owned(),
+            project: project_name(cwd),
+            cwd: cwd.to_owned(),
+            state: SessionState::Idle,
+            detail: None,
+            detail_kind: None,
+            pending_questions: Vec::new(),
+            model: None,
+            turn_started_at: None,
+            last_turn_secs: None,
+            updated_at: now,
+        }
+    }
+
+    pub(crate) fn show_pending_questions(&mut self) {
+        if let Some(latest) = self.pending_questions.iter().map(|q| q.requested_at).max() {
+            self.state = SessionState::NeedsInput;
+            self.detail = None;
+            self.detail_kind = Some(DetailKind::Question);
+            self.updated_at = latest;
+        }
+    }
 }
 
 pub fn state_dir() -> Option<PathBuf> {
@@ -83,6 +121,18 @@ fn session_path(dir: &Path, provider: &str, session_id: &str) -> PathBuf {
     dir.join(format!("{provider}-{safe}.json"))
 }
 
+// Hooks can run concurrently in separate processes. Keep the whole read/modify/
+// write cycle under one lock so an unrelated hook cannot erase a pending question.
+fn lock_sessions(dir: &Path) -> std::io::Result<File> {
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join("sessions.lock"))?;
+    lock.lock()?;
+    Ok(lock)
+}
+
 /// Applies one hook payload (the JSON the agent writes to the hook's stdin).
 /// Unknown events are ignored.
 pub fn apply_hook_event(provider: &str, payload: &Value) -> std::io::Result<()> {
@@ -101,6 +151,8 @@ fn apply_hook_event_in(
     else {
         return Ok(());
     };
+    std::fs::create_dir_all(dir)?;
+    let _lock = lock_sessions(dir)?;
     let path = session_path(dir, provider, session_id);
 
     if event == "SessionEnd" {
@@ -113,27 +165,15 @@ fn apply_hook_event_in(
     let existing: Option<Session> = std::fs::read(&path)
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok());
-    let cwd = str_field("cwd").unwrap_or_default().to_string();
-    let mut session = existing.unwrap_or_else(|| Session {
-        provider: provider.to_string(),
-        session_id: session_id.to_string(),
-        project: project_name(&cwd),
-        cwd: cwd.clone(),
-        state: SessionState::Idle,
-        detail: None,
-        detail_kind: None,
-        model: None,
-        turn_started_at: None,
-        last_turn_secs: None,
-        updated_at: now,
-    });
+    let cwd = str_field("cwd").unwrap_or_default();
+    let mut session = existing.unwrap_or_else(|| Session::new(provider, session_id, cwd, now));
     // The agent's cwd follows `cd` inside the session; the project name stays
     // the directory the session started in so it doesn't flicker.
     if !cwd.is_empty() {
         if session.cwd.is_empty() {
-            session.project = project_name(&cwd);
+            session.project = project_name(cwd);
         }
-        session.cwd = cwd;
+        session.cwd = cwd.to_owned();
     }
     if let Some(model) = str_field("model") {
         session.model = Some(model.to_string());
@@ -143,6 +183,7 @@ fn apply_hook_event_in(
     session.detail_kind = None;
     match event {
         "SessionStart" => {
+            session.pending_questions.clear();
             session.state = SessionState::Idle;
             session.detail = None;
         }
@@ -150,6 +191,40 @@ fn apply_hook_event_in(
             session.state = SessionState::Working;
             session.detail = None;
             session.turn_started_at = Some(now);
+        }
+        "PreToolUse"
+            if provider == "codex" && str_field("tool_name") == Some("request_user_input") =>
+        {
+            let Some(request_id) = str_field("tool_use_id").filter(|id| !id.is_empty()) else {
+                return Ok(());
+            };
+            if !crate::codex_questions::has_options(&payload["tool_input"])
+                || session
+                    .pending_questions
+                    .iter()
+                    .any(|q| q.request_id == request_id)
+            {
+                return Ok(());
+            }
+            session.pending_questions.push(PendingQuestion {
+                request_id: request_id.to_owned(),
+                requested_at: now,
+            });
+            session.state = SessionState::Working;
+            session.detail = None;
+            session.turn_started_at.get_or_insert(now);
+        }
+        "PostToolUse" | "PostToolUseFailure"
+            if provider == "codex" && str_field("tool_name") == Some("request_user_input") =>
+        {
+            let Some(id) = str_field("tool_use_id") else {
+                return Ok(());
+            };
+            let before = session.pending_questions.len();
+            session.pending_questions.retain(|q| q.request_id != id);
+            if before == session.pending_questions.len() {
+                return Ok(());
+            }
         }
         "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "SubagentStart" | "PreCompact" => {
             session.state = SessionState::Working;
@@ -175,6 +250,7 @@ fn apply_hook_event_in(
             _ => return Ok(()),
         },
         "Stop" | "StopFailure" => {
+            session.pending_questions.clear();
             session.state = SessionState::Done;
             session.last_turn_secs = session
                 .turn_started_at
@@ -184,6 +260,7 @@ fn apply_hook_event_in(
             session.detail_kind = (event == "StopFailure").then_some(DetailKind::Failed);
         }
         "Interrupt" => {
+            session.pending_questions.clear();
             session.state = SessionState::Idle;
             session.turn_started_at = None;
             session.detail = None;
@@ -193,7 +270,6 @@ fn apply_hook_event_in(
     }
     session.updated_at = now;
 
-    std::fs::create_dir_all(dir)?;
     // Write-then-rename so readers never see a half-written file.
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec(&session)?)?;
@@ -213,6 +289,10 @@ fn project_name(cwd: &str) -> String {
 /// brings it back.
 pub fn remove_session(provider: &str, session_id: &str) -> std::io::Result<()> {
     let dir = state_dir().ok_or_else(|| std::io::Error::other("no state directory"))?;
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let _lock = lock_sessions(&dir)?;
     match std::fs::remove_file(session_path(&dir, provider, session_id)) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
@@ -226,6 +306,9 @@ pub fn list_sessions() -> Vec<Session> {
 }
 
 fn list_sessions_in(dir: &Path, now: DateTime<Utc>) -> Vec<Session> {
+    let Ok(_lock) = lock_sessions(dir) else {
+        return Vec::new();
+    };
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -233,20 +316,30 @@ fn list_sessions_in(dir: &Path, now: DateTime<Utc>) -> Vec<Session> {
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
         .filter_map(|e| {
-            let session: Session = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
+            let mut session: Session =
+                serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
             if now - session.updated_at > Duration::hours(STALE_AFTER_HOURS) {
                 let _ = std::fs::remove_file(e.path());
                 return None;
             }
+            session
+                .pending_questions
+                .retain(|q| now - q.requested_at <= Duration::hours(STALE_AFTER_HOURS));
+            session.show_pending_questions();
             Some(session)
         })
         .collect();
+    sort_sessions(&mut sessions);
+    sessions
+}
+
+pub(crate) fn sort_sessions(sessions: &mut [Session]) {
     sessions.sort_by(|a, b| {
         urgency(a.state)
             .cmp(&urgency(b.state))
             .then(b.updated_at.cmp(&a.updated_at))
+            .then(a.session_id.cmp(&b.session_id))
     });
-    sessions
 }
 
 fn urgency(state: SessionState) -> u8 {
@@ -333,6 +426,46 @@ mod tests {
         apply("SessionEnd", json!({"reason": "other"}), at(400));
         assert!(list_sessions_in(&dir, at(400)).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn codex_question_survives_other_tools_until_its_own_answer_or_interrupt() {
+        let dir = temp_dir("codex-question");
+        let now = Utc::now();
+        let apply = |name, payload, seconds| {
+            apply_hook_event_in(
+                &dir,
+                "codex",
+                &event(name, payload),
+                now + Duration::seconds(seconds),
+            )
+            .unwrap()
+        };
+        let question = json!({"tool_name": "request_user_input", "tool_use_id": "q1",
+            "tool_input": {"questions": [{"options": [{"label": "A"}]}]}});
+        apply("PreToolUse", question.clone(), 0);
+        apply(
+            "PostToolUse",
+            json!({"tool_name": "Bash", "tool_use_id": "other"}),
+            1,
+        );
+        let at = now + Duration::seconds(2);
+        let waiting = list_sessions_in(&dir, at).remove(0);
+        assert_eq!(waiting.state, SessionState::NeedsInput);
+        assert_eq!(waiting.pending_questions[0].request_id, "q1");
+        assert_eq!(waiting.updated_at, now);
+
+        apply("PostToolUse", question.clone(), 2);
+        let resumed = list_sessions_in(&dir, at).remove(0);
+        assert_eq!(resumed.state, SessionState::Working);
+        assert!(resumed.pending_questions.is_empty());
+
+        apply("PreToolUse", question, 3);
+        apply("Interrupt", json!({}), 4);
+        let interrupted = list_sessions_in(&dir, now + Duration::seconds(4)).remove(0);
+        assert_eq!(interrupted.state, SessionState::Idle);
+        assert!(interrupted.pending_questions.is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

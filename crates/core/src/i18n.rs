@@ -210,6 +210,7 @@ pub fn session_detail(s: &Session) -> Option<String> {
         }),
         Some(DetailKind::Failed) => Some(t("session.detail.failed")),
         Some(DetailKind::Interrupted) => Some(t("session.detail.interrupted")),
+        Some(DetailKind::Question) => Some(t("session.detail.question")),
         None => s.detail.clone(),
     }
 }

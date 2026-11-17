@@ -1,4 +1,5 @@
 {
+  "session.detail.question": "带选项的问题",
   "weekdays_short": "周一,周二,周三,周四,周五,周六,周日",
 
   "window.session": "会话 (5h)",

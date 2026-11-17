@@ -5,8 +5,8 @@
 //!   GET /v1/usage      usage per provider (same JSON as `ai-usage --json`)
 //!   GET /v1/sessions   live agent sessions
 //!   GET /v1/status     both, plus whether focus mode is on
-//!   GET /v1/events     Server-Sent Events: `usage`, `sessions` and `mute`
-//!                      events with the same JSON, sent when they change
+//!   GET /v1/events     Server-Sent Events: `usage`, `sessions`, `mute`,
+//!                      and `codex_question` when a new question is pending
 //!
 //! Requests whose `Host` isn't a loopback name are refused, so a web page
 //! can't reach the API through DNS rebinding. No CORS headers are sent:
@@ -18,10 +18,48 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use ai_usage_core::{sessions::PendingQuestion, Session};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 pub const DEFAULT_PORT: u16 = 47821;
+
+#[derive(Serialize)]
+pub struct CodexQuestionEvent<'a> {
+    session_id: &'a str,
+    project: &'a str,
+    #[serde(flatten)]
+    question: &'a PendingQuestion,
+}
+
+pub fn new_codex_questions<'a>(
+    previous: &'a [Session],
+    current: &'a [Session],
+) -> impl Iterator<Item = CodexQuestionEvent<'a>> {
+    current
+        .iter()
+        .filter(|s| s.provider == "codex")
+        .flat_map(move |session| {
+            let old = previous
+                .iter()
+                .find(|s| s.provider == "codex" && s.session_id == session.session_id);
+            session
+                .pending_questions
+                .iter()
+                .filter(move |q| {
+                    !old.is_some_and(|s| {
+                        s.pending_questions
+                            .iter()
+                            .any(|old| old.request_id == q.request_id)
+                    })
+                })
+                .map(|question| CodexQuestionEvent {
+                    session_id: &session.session_id,
+                    project: &session.project,
+                    question,
+                })
+        })
+}
 
 #[derive(Default)]
 pub struct Api {
@@ -173,6 +211,10 @@ fn subscribe(app: &AppHandle, mut stream: TcpStream) {
     let _ = stream.set_read_timeout(None);
     // A stuck client must not hold up the others.
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    // Register under the same lock as broadcasts so a subscriber that has
+    // received its snapshot can't miss a subsequent change.
+    let api = app.state::<Api>();
+    let mut subscribers = api.subscribers.lock().unwrap();
     let snapshot = app.state::<crate::Snapshot>();
     let usage = serde_json::to_string(&*snapshot.usage.lock().unwrap()).unwrap_or_default();
     let sessions = serde_json::to_string(&*snapshot.sessions.lock().unwrap()).unwrap_or_default();
@@ -184,13 +226,48 @@ fn subscribe(app: &AppHandle, mut stream: TcpStream) {
          event: usage\ndata: {usage}\n\nevent: sessions\ndata: {sessions}\n\nevent: mute\ndata: {mute}\n\n"
     );
     if stream.write_all(head.as_bytes()).is_ok() {
-        app.state::<Api>().subscribers.lock().unwrap().push(stream);
+        subscribers.push(stream);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_question_emits_once_even_if_the_session_was_already_waiting() {
+        let mut session: Session = serde_json::from_value(json!({
+            "provider": "codex",
+            "session_id": "test-session",
+            "cwd": "/test/project",
+            "project": "project",
+            "state": "needs_input",
+            "detail": "private question text",
+            "updated_at": "2026-11-16T12:00:00Z",
+        }))
+        .unwrap();
+        let previous = vec![session.clone()];
+        session.pending_questions.push(PendingQuestion {
+            request_id: "call-1".into(),
+            requested_at: session.updated_at,
+        });
+        let current = vec![session];
+        let events: Vec<_> = new_codex_questions(&previous, &current)
+            .map(|event| serde_json::to_value(event).unwrap())
+            .collect();
+        assert_eq!(
+            events,
+            vec![json!({
+                "session_id": "test-session",
+                "project": "project",
+                "request_id": "call-1",
+                "requested_at": "2026-11-16T12:00:00Z",
+            })]
+        );
+        assert_eq!(new_codex_questions(&current, &current).count(), 0);
+        assert_eq!(new_codex_questions(&current, &previous).count(), 0);
+    }
 
     #[test]
     fn only_loopback_hosts_are_accepted() {

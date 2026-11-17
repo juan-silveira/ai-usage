@@ -178,6 +178,17 @@ input.port {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
 }
 .grid > p.muted { grid-column: 1 / -1; }
+.codex-accounts {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.codex-accounts .card h2, .codex-accounts .window .row { flex-wrap: wrap; column-gap: 4px; }
+@media (max-width: 480px) {
+  .codex-accounts { grid-template-columns: 1fr; gap: 0; }
+}
 #view-settings { columns: 340px; column-gap: 14px; }
 #view-settings .group { break-inside: avoid; display: flow-root; }
 #view-settings .group > h2.section:first-child { margin-top: 12px; }

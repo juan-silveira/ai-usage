@@ -19,6 +19,10 @@ pub use openrouter::OpenRouter;
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
     fn display_name(&self) -> &'static str;
+    /// Changes when previously cached usage belongs to a different login.
+    fn cache_revision(&self) -> Option<String> {
+        None
+    }
     /// Returns the plan name (if known) and the usage status.
     fn poll(&self) -> (Option<String>, ProviderStatus);
 
@@ -38,7 +42,7 @@ pub trait Provider: Send + Sync {
 pub fn all_providers() -> Vec<Box<dyn Provider>> {
     vec![
         Box::new(Claude),
-        Box::new(Codex),
+        Box::new(Codex::Primary),
         Box::new(Copilot),
         Box::new(Cursor),
         Box::new(OpenRouter),

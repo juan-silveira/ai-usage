@@ -157,12 +157,62 @@ Raycast, Stream Deck or a small display:
 curl http://127.0.0.1:47821/v1/status      # usage + sessions + focus mode
 curl http://127.0.0.1:47821/v1/usage       # same JSON as `ai-usage --json`
 curl http://127.0.0.1:47821/v1/sessions
-curl -N http://127.0.0.1:47821/v1/events   # Server-Sent Events: usage, sessions, mute
+curl -N http://127.0.0.1:47821/v1/events   # Server-Sent Events
 ```
 
 `/v1/events` sends the current state on connect and then every change, so a
 client never needs to poll. Requests whose `Host` isn't a loopback name are
 refused, so web pages can't reach it through DNS rebinding.
+
+When a Codex question with choices becomes pending, the stream sends
+`event: codex_question` with `session_id`, `project`, `request_id` and
+`requested_at`. Use `(session_id, request_id)` to deduplicate actions. The
+`sessions` snapshot also includes `pending_questions` while a request is
+open, so a reconnect can recover the current state. The question text,
+options and answers stay out of the API.
+
+Enable live sessions for Codex under **Preferences → Connections**.
+The app tracks blocking questions through the Codex tool hooks and accepted
+async questions through recent local Codex session logs. An async question
+stays pending until its reply arrives, you dismiss it in AI Usage, or it
+expires after 12 hours.
+
+#### Turn on a lamp with Alexa or Home Assistant
+
+If the plug already appears in Alexa, keep it paired there. Enable
+[Voice Monkey](https://voicemonkey.io/docs/getting-started/enable-skill), create
+a [Routine Trigger](https://voicemonkey.io/docs/getting-started/add-device#add-a-routine-trigger),
+and set up an Alexa routine whose action turns on the plug. Then create a
+[Voice Monkey inbound webhook](https://voicemonkey.io/docs/webhooks) that runs
+that trigger and copy its URL.
+
+With Home Assistant, create an automation with a **Webhook** trigger (POST,
+local only) and a **Switch: Turn on** action for the plug.
+
+Keep the webhook URL private. On the Mac, run the following from this
+checkout. In zsh, the first line prompts for the URL without echoing it.
+
+```sh
+read -rs 'lamp_url?URL do webhook: '
+AI_USAGE_LAMP_WEBHOOK="$lamp_url" python3 integrations/codex-lamp.py
+unset lamp_url
+```
+
+Use `python3 integrations/codex-lamp.py --dry-run` to check question detection
+before connecting the lamp. Leave the listener running while you want the
+automation active. A question already open when the listener connects also
+turns on the lamp. The listener sends an empty POST to the configured webhook.
+
+For a one-time test, run `python3 integrations/codex-lamp.py --once`.
+It prompts privately for the webhook URL if needed and waits up to three
+minutes for a new question. Existing pending questions are ignored.
+`--once --dry-run` tests detection without a webhook.
+
+To start the bridge automatically when you sign in to macOS, run
+`python3 integrations/install-codex-lamp.py` once and paste the Voice Monkey
+webhook at the hidden prompt. The bridge runs as a per-user launch agent.
+Keep the AI Usage local API enabled and AI Usage set to start at login.
+The routine only turns the plug on.
 
 ### Updates
 

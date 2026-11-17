@@ -9,12 +9,13 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 
 use ai_usage_core::i18n::tf;
-use ai_usage_core::{cli_locate, hook_install};
+use ai_usage_core::providers::Codex;
+use ai_usage_core::{cli_locate, hook_install, Provider};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -28,6 +29,7 @@ struct Agent {
     install: &'static str,
     /// Whether `install` uses npm (and so needs Node.js).
     needs_node: bool,
+    codex: Option<Codex>,
 }
 
 /// Claude Code's own installer, no Node.js needed.
@@ -46,8 +48,8 @@ const NODE_INSTALL: Option<&str> = if cfg!(windows) {
     None
 };
 
-const AGENTS: &[Agent] = &[
-    Agent {
+fn agents() -> impl Iterator<Item = Agent> {
+    std::iter::once(Agent {
         id: "claude",
         name: "Claude Code",
         cli: "claude",
@@ -55,23 +57,46 @@ const AGENTS: &[Agent] = &[
         logout_args: &["auth", "logout"],
         install: CLAUDE_INSTALL,
         needs_node: false,
-    },
-    Agent {
-        id: "codex",
-        name: "Codex",
+        codex: None,
+    })
+    .chain(Codex::ACCOUNTS.map(|account| Agent {
+        id: account.id(),
+        name: account.display_name(),
         cli: "codex",
         login_args: &["login"],
         logout_args: &["logout"],
         install: "npm install -g @openai/codex",
         needs_node: true,
-    },
-];
+        codex: Some(account),
+    }))
+}
 
-fn agent(id: &str) -> Result<&'static Agent, String> {
-    AGENTS
-        .iter()
+fn agent(id: &str) -> Result<Agent, String> {
+    agents()
         .find(|a| a.id == id)
         .ok_or_else(|| tf("err.unknown_provider", &[("id", &id)]))
+}
+
+impl Agent {
+    fn command(&self, cli: &Path, args: &[&str]) -> Result<Command, String> {
+        let mut command = Command::new(cli);
+        command.args(args).env("PATH", cli_locate::child_path(cli));
+        if let Some(account @ (Codex::Second | Codex::Third)) = self.codex {
+            let home = account.home().ok_or("Codex profile directory unavailable")?;
+            let mut dir = std::fs::DirBuilder::new();
+            dir.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                dir.mode(0o700);
+            }
+            dir.create(&home).map_err(|e| e.to_string())?;
+            command
+                .env("CODEX_HOME", home)
+                .args(["-c", "cli_auth_credentials_store=\"file\""]);
+        }
+        Ok(command)
+    }
 }
 
 #[derive(Serialize)]
@@ -88,7 +113,9 @@ pub struct Connection {
     /// get Node.js first ("" when there's no single command, e.g. Linux).
     node_install: Option<&'static str>,
     hooks_installed: bool,
+    supports_hooks: bool,
     login_running: bool,
+    login_blocked: bool,
     /// For "key": where the key comes from ("env" or "file"), if any.
     key_source: Option<&'static str>,
     /// Turned off in the app ("app" kind only).
@@ -116,16 +143,27 @@ pub fn get_connections(app: AppHandle) -> Vec<Connection> {
         .unwrap()
         .disabled_providers
         .clone();
-    let agents = AGENTS.iter().map(|a| Connection {
+    let codex_signing_in = Codex::ACCOUNTS
+        .iter()
+        .any(|account| running.contains_key(account.id()));
+    let codex_cli = cli_locate::find("codex");
+    let codex_node_install = cli_locate::find("npm").is_none();
+    let agents = agents().map(|a| Connection {
         provider: a.id,
         name: a.name,
         kind: "cli",
-        cli_path: cli_locate::find(a.cli),
+        cli_path: if a.codex.is_some() {
+            codex_cli.clone()
+        } else {
+            cli_locate::find(a.cli)
+        },
         install_command: a.install,
-        node_install: (a.needs_node && cli_locate::find("npm").is_none())
+        node_install: (a.needs_node && codex_node_install)
             .then_some(NODE_INSTALL.unwrap_or("")),
         hooks_installed: hook_install::target(a.id).is_some_and(|t| hook_install::is_installed(&t)),
+        supports_hooks: matches!(a.id, "claude" | "codex"),
         login_running: running.contains_key(a.id),
+        login_blocked: a.codex.is_some() && codex_signing_in,
         key_source: None,
         disabled: false,
     });
@@ -137,7 +175,9 @@ pub fn get_connections(app: AppHandle) -> Vec<Connection> {
         install_command: "",
         node_install: None,
         hooks_installed: false,
+        supports_hooks: false,
         login_running: false,
+        login_blocked: false,
         key_source: (id == "openrouter")
             .then(ai_usage_core::providers::openrouter::key_source)
             .flatten(),
@@ -172,9 +212,13 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
     if running.contains_key(&provider) {
         return Ok(());
     }
-    let mut child = Command::new(&cli)
-        .args(agent.login_args)
-        .env("PATH", cli_locate::child_path(&cli))
+    if agent.codex.is_some()
+        && Codex::ACCOUNTS.iter().any(|a| running.contains_key(a.id()))
+    {
+        return Err(ai_usage_core::i18n::t("conn.finish_in_browser"));
+    }
+    let mut child = agent
+        .command(&cli, agent.login_args)?
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -183,6 +227,7 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
     let stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let stderr = child.stderr.take().ok_or("no stderr")?;
+    let pid = child.id();
     running.insert(provider.clone(), (child, stdin));
     drop(running);
 
@@ -216,6 +261,9 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
         let Some((child, _)) = running.get_mut(&provider) else {
             return; // cancelled
         };
+        if child.id() != pid {
+            return;
+        }
         if let Ok(Some(status)) = child.try_wait() {
             running.remove(&provider);
             drop(running);
@@ -228,6 +276,11 @@ pub fn start_login(app: AppHandle, provider: String) -> Result<(), String> {
                     finished: Some(status.success()),
                 },
             );
+            app.state::<crate::Snapshot>()
+                .poller
+                .lock()
+                .unwrap()
+                .forget(&provider);
             crate::refresh_now(app.clone());
             return;
         }
@@ -261,9 +314,8 @@ pub async fn logout(app: AppHandle, provider: String) -> Result<(), String> {
     let agent = agent(&provider)?;
     let cli = cli_locate::find(agent.cli)
         .ok_or_else(|| tf("err.cli_not_found", &[("cli", &agent.cli)]))?;
-    let out = Command::new(&cli)
-        .args(agent.logout_args)
-        .env("PATH", cli_locate::child_path(&cli))
+    let out = agent
+        .command(&cli, agent.logout_args)?
         .stdin(Stdio::null())
         .output()
         .map_err(|e| tf("err.cli_start", &[("cli", &agent.cli), ("error", &e)]))?;

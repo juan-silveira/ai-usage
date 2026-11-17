@@ -1,4 +1,5 @@
 {
+  "session.detail.question": "選択肢付きの質問",
   "weekdays_short": "月,火,水,木,金,土,日",
 
   "window.session": "セッション (5時間)",

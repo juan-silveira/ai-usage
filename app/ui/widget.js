@@ -57,9 +57,10 @@ function render() {
           // Providers with neither (Copilot's monthly quotas) show their first two.
           const main = p.windows.filter((w) => w.key === "session" || w.key === "weekly");
           const windows = main.length ? main : p.windows.slice(0, 2);
+          const account = { "codex-2": "C2", "codex-3": "C3" }[p.provider];
           const icon = ICON[p.provider]
             ? `<img src="${ICON[p.provider]}" alt="${escapeHtml(p.display_name)}" />`
-            : `<span>${escapeHtml(p.display_name.slice(0, 2))}</span>`;
+            : `<span title="${escapeHtml(p.display_name)}">${escapeHtml(account ?? p.display_name.slice(0, 2))}</span>`;
           return `<div class="row">${icon}<div>${windows.map(line).join("")}</div></div>`;
         })
         .join("")

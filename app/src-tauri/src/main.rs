@@ -18,8 +18,10 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use ai_usage_core::codex_questions::CodexQuestions;
 use ai_usage_core::i18n::{self, t, tf};
-use ai_usage_core::{list_sessions, Poller, ProviderUsage, Session};
+use ai_usage_core::providers::Codex;
+use ai_usage_core::{list_sessions, Poller, Provider, ProviderUsage, Session};
 use serde::{Deserialize, Serialize};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
@@ -227,6 +229,8 @@ impl Settings {
 struct Snapshot {
     usage: Mutex<Vec<ProviderUsage>>,
     sessions: Mutex<Vec<Session>>,
+    session_poll: Mutex<()>,
+    codex_questions: Mutex<CodexQuestions>,
     alerts: Mutex<AlertTracker>,
     settings: Mutex<Settings>,
     poller: Mutex<Poller>,
@@ -258,6 +262,12 @@ fn get_sessions(state: State<Snapshot>) -> Vec<Session> {
 /// Removes a session from the list (and the widget/tray) right away.
 #[tauri::command]
 fn dismiss_session(app: AppHandle, provider: String, session_id: String) -> Result<(), String> {
+    let snapshot = app.state::<Snapshot>();
+    let session = snapshot.sessions.lock().unwrap().iter()
+        .find(|s| s.provider == provider && s.session_id == session_id).cloned();
+    if let Some(session) = session {
+        snapshot.codex_questions.lock().unwrap().dismiss(&session);
+    }
     ai_usage_core::sessions::remove_session(&provider, &session_id).map_err(|e| e.to_string())?;
     poll_sessions(&app);
     Ok(())
@@ -272,7 +282,7 @@ fn acknowledge_session(state: State<Snapshot>, key: String) {
 fn get_settings(state: State<Snapshot>) -> SettingsView {
     let mut settings = state.settings.lock().unwrap().clone();
     let mut default_names = BTreeMap::new();
-    let mut ids: Vec<String> = ai_usage_core::all_providers()
+    let mut ids: Vec<String> = desktop_providers()
         .iter()
         .map(|p| p.id().to_string())
         .collect();
@@ -821,7 +831,19 @@ fn poll_usage(app: &AppHandle) {
     api::broadcast(app, "usage", &usage);
 }
 
+fn desktop_providers() -> Vec<Box<dyn Provider>> {
+    let mut providers = ai_usage_core::all_providers();
+    let after_codex = providers.iter().position(|p| p.id() == "codex").unwrap() + 1;
+    providers.splice(
+        after_codex..after_codex,
+        [Codex::Second, Codex::Third].map(|account| Box::new(account) as Box<dyn Provider>),
+    );
+    providers
+}
+
 fn poll_sessions(app: &AppHandle) {
+    let snapshot = app.state::<Snapshot>();
+    let _poll = snapshot.session_poll.lock().unwrap();
     // A timed focus mode ends on its own: notice it here (every 2 s) so the
     // tray mark and menu follow.
     let muted = app
@@ -836,8 +858,8 @@ fn poll_sessions(app: &AppHandle) {
     }
 
     let mut sessions = list_sessions();
+    snapshot.codex_questions.lock().unwrap().update(&mut sessions);
     i18n::localize_sessions(&mut sessions);
-    let snapshot = app.state::<Snapshot>();
     let alerts = snapshot
         .alerts
         .lock()
@@ -874,16 +896,17 @@ fn poll_sessions(app: &AppHandle) {
         let _ = builder.show();
     }
 
-    let changed = {
+    let previous = {
         let mut current = snapshot.sessions.lock().unwrap();
-        let changed = serde_json::to_value(&*current).ok() != serde_json::to_value(&sessions).ok();
-        *current = sessions.clone();
-        changed
+        (*current != sessions).then(|| std::mem::replace(&mut *current, sessions.clone()))
     };
-    if changed {
+    if let Some(previous) = previous {
         update_tray(app);
         let _ = app.emit("sessions-updated", &sessions);
         api::broadcast(app, "sessions", &sessions);
+        for question in api::new_codex_questions(&previous, &sessions) {
+            api::broadcast(app, "codex_question", &question);
+        }
     }
 }
 
@@ -1105,11 +1128,9 @@ fn main() {
 
             let settings = Settings::load(app.handle());
             i18n::set_locale(&settings.language);
-            app.state::<Snapshot>()
-                .poller
-                .lock()
-                .unwrap()
-                .set_disabled(settings.disabled_providers.clone());
+            let mut poller = Poller::with_shared_cache(desktop_providers());
+            poller.set_disabled(settings.disabled_providers.clone());
+            *app.state::<Snapshot>().poller.lock().unwrap() = poller;
             if settings.api_enabled {
                 if let Err(e) = api::configure(app.handle(), true, settings.api_port) {
                     eprintln!("ai-usage: local API not started: {e}");

@@ -1,4 +1,5 @@
 {
+  "session.detail.question": "선택지가 있는 질문",
   "weekdays_short": "월,화,수,목,금,토,일",
 
   "window.session": "세션 (5시간)",

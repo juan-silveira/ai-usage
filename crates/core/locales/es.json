@@ -1,4 +1,5 @@
 {
+  "session.detail.question": "Pregunta con opciones",
   "weekdays_short": "lun,mar,mié,jue,vie,sáb,dom",
 
   "window.session": "Sesión (5h)",

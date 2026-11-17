@@ -74,6 +74,7 @@ impl ProviderBar {
     pub fn default_for(provider: &str) -> Self {
         Self {
             show: SHOWN_BY_DEFAULT.contains(&provider),
+            show_name: matches!(provider, "codex-2" | "codex-3"),
             ..Self::default()
         }
     }
@@ -83,6 +84,8 @@ pub fn default_name(provider: &str) -> String {
     match provider {
         "claude" => "CL".into(),
         "codex" => "CX".into(),
+        "codex-2" => "CX2".into(),
+        "codex-3" => "CX3".into(),
         "copilot" => "GH".into(),
         "cursor" => "CU".into(),
         "openrouter" => "OR".into(),
@@ -93,7 +96,7 @@ pub fn default_name(provider: &str) -> String {
 pub fn provider_icon(provider: &str) -> Option<&'static [u8]> {
     match provider {
         "claude" => Some(include_bytes!("../icons/providers/claude.png")),
-        "codex" => Some(include_bytes!("../icons/providers/codex.png")),
+        "codex" | "codex-2" | "codex-3" => Some(include_bytes!("../icons/providers/codex.png")),
         "copilot" => Some(include_bytes!("../icons/providers/copilot.png")),
         "cursor" => Some(include_bytes!("../icons/providers/cursor.png")),
         "openrouter" => Some(include_bytes!("../icons/providers/openrouter.png")),
@@ -301,6 +304,7 @@ mod tests {
             state: SessionState::NeedsInput,
             detail: None,
             detail_kind: None,
+            pending_questions: Vec::new(),
             model: None,
             turn_started_at: None,
             last_turn_secs: None,

@@ -1,4 +1,5 @@
 {
+  "session.detail.question": "Вопрос с вариантами ответа",
   "weekdays_short": "пн,вт,ср,чт,пт,сб,вс",
 
   "window.session": "Сессия (5ч)",

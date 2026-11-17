@@ -12,6 +12,8 @@ try {
 const acknowledged = new Map();
 
 const STATUS_TEXT = ["no_credentials", "token_expired", "rate_limited"];
+const CODEX_ACCOUNTS = ["codex", "codex-2", "codex-3"];
+const providerGroup = (id) => CODEX_ACCOUNTS.includes(id) ? "codex" : id;
 const LOCALE = I18N.locale;
 const hhmm = (d) => d.toLocaleTimeString(LOCALE, { hour: "2-digit", minute: "2-digit" });
 
@@ -64,8 +66,13 @@ function renderProvider(p) {
       )
       .join("");
   } else {
-    const text = STATUS_TEXT.includes(p.status) ? t(`status.${p.status}`) : t("status.error", { message: p.message });
+    const text = p.status === "no_credentials" && providerGroup(p.provider) === "codex"
+      ? t("conn.not_connected")
+      : STATUS_TEXT.includes(p.status) ? t(`status.${p.status}`) : t("status.error", { message: p.message });
     body = `<p class="status">${escapeHtml(text)}</p>`;
+    if (providerGroup(p.provider) === "codex" && ["no_credentials", "token_expired"].includes(p.status)) {
+      body += `<button class="text" data-codex-connection="${p.provider}">${escapeHtml(t(p.status === "token_expired" ? "conn.reconnect" : "conn.connect"))}</button>`;
+    }
   }
   return `<section class="card"><h2>${escapeHtml(p.display_name)} ${plan}</h2>${body}${staleNotice(p)}</section>`;
 }
@@ -74,16 +81,31 @@ function renderLimits() {
   const root = document.getElementById("providers");
   if (latest.length === 0) return;
   const shown = latest.filter(
-    (p) => p.status !== "no_credentials" && (activeTab === "all" || p.provider === activeTab)
+    (p) => (p.status !== "no_credentials" || providerGroup(p.provider) === "codex")
+      && (activeTab === "all" || providerGroup(p.provider) === activeTab)
   );
-  root.innerHTML = shown.length
-    ? shown.map(renderProvider).join("")
-    : `<p class="muted">${escapeHtml(t("limits.none_for_provider"))}</p>`;
+  const codex = shown.filter((p) => providerGroup(p.provider) === "codex");
+  root.innerHTML = shown.map((p) => {
+    if (providerGroup(p.provider) !== "codex") return renderProvider(p);
+    return p === codex[0]
+      ? `<div class="codex-accounts">${codex.map(renderProvider).join("")}</div>`
+      : "";
+  }).join("") || `<p class="muted">${escapeHtml(t("limits.none_for_provider"))}</p>`;
   const fresh = latest.filter((p) => !p.stale).map((p) => new Date(p.fetched_at));
   const at = fresh.length ? new Date(Math.max(...fresh)) : new Date(latest[0].fetched_at);
   document.getElementById("updated").textContent =
     t("limits.updated", { at: at.toLocaleTimeString(LOCALE), n: pollEvery });
 }
+
+document.getElementById("providers").addEventListener("click", async (e) => {
+  const id = e.target.closest("[data-codex-connection]")?.dataset.codexConnection;
+  if (!id) return;
+  selectTab("settings");
+  await loadConnections();
+  const row = document.querySelector(`#connections [data-provider="${CSS.escape(id)}"]`);
+  row?.scrollIntoView({ block: "nearest" });
+  row?.querySelector('[data-act="login"]')?.focus();
+});
 
 function peakPercent(p) {
   return p && p.status === "ok" && p.windows.length
@@ -98,7 +120,8 @@ function connectedIds() {
 
 /** Providers known from either the usage poll or live sessions, in poll order. */
 function providerIds() {
-  const ids = connectedIds();
+  const ids = [...new Set(latest.filter((p) => p.status !== "no_credentials" || providerGroup(p.provider) === "codex")
+    .map((p) => providerGroup(p.provider)))];
   for (const s of sessions) if (!ids.includes(s.provider)) ids.push(s.provider);
   return ids;
 }
@@ -122,10 +145,12 @@ function renderTabs() {
     tab("all", t("tabs.all"), alertBadge(waiting("all"))) +
     ids
       .map((id) => {
-        const usage = latest.find((p) => p.provider === id);
+        const usage = latest.filter((p) => providerGroup(p.provider) === id && p.status === "ok")
+          .reduce((peak, p) => peakPercent(p) > (peakPercent(peak) ?? -1) ? p : peak, null);
         const pct = peakPercent(usage);
         const pctBadge = pct == null ? "" : `<span class="pct ${worstSeverity(usage)}">${pct.toFixed(0)}%</span>`;
-        return tab(id, usage?.display_name ?? PROVIDER_NAME[id] ?? id, pctBadge + alertBadge(waiting(id)), PROVIDER_ICON[id]);
+        const label = id === "codex" ? "Codex" : usage?.display_name ?? PROVIDER_NAME[id] ?? id;
+        return tab(id, label, pctBadge + alertBadge(waiting(id)), providerIcon(id));
       })
       .join("") +
     `<button role="tab" class="tab gear" data-tab="settings" title="${escapeHtml(t("tabs.settings"))}" aria-label="${escapeHtml(t("tabs.settings"))}"
@@ -161,7 +186,7 @@ document.getElementById("tabs").addEventListener("keydown", (e) => {
   selectTab(ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length]);
 });
 
-const PROVIDER_NAME = { claude: "Claude", codex: "Codex", copilot: "Copilot", cursor: "Cursor", openrouter: "OpenRouter" };
+const PROVIDER_NAME = { claude: "Claude", codex: "Codex 1", "codex-2": "Codex 2", "codex-3": "Codex 3", copilot: "Copilot", cursor: "Cursor", openrouter: "OpenRouter" };
 
 function ago(iso) {
   const secs = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
@@ -253,6 +278,7 @@ document.querySelectorAll("[data-preview]").forEach((btn) =>
 );
 
 const PROVIDER_ICON = { claude: "icons/claude.png", codex: "icons/codex.png", copilot: "icons/copilot.png", cursor: "icons/cursor.png", openrouter: "icons/openrouter.png" };
+const providerIcon = (id) => PROVIDER_ICON[providerGroup(id)];
 let barSettings = null;
 
 /** Mirrors bar.rs so the preview matches what the panel will show. */
@@ -287,7 +313,7 @@ function barPreview(id, cfg) {
       value += ` · ${when}`;
     }
   }
-  const icon = cfg.show_icon ? PROVIDER_ICON[id] : null;
+  const icon = cfg.show_icon ? providerIcon(id) : null;
   const name = cfg.name.trim() || barSettings.default_names[id];
   const text = cfg.show_name || (cfg.show_icon && !icon) ? `${name} ${value}` : value;
   return `<span class="preview">${icon ? `<img src="${icon}" alt="" />` : ""}${escapeHtml(text)}</span>`;
@@ -302,7 +328,7 @@ function renderProviderBar() {
     .map(([id, cfg]) => {
       const usage = latest.find((p) => p.provider === id);
       const label = usage?.display_name ?? PROVIDER_NAME[id] ?? id;
-      const icon = PROVIDER_ICON[id];
+      const icon = providerIcon(id);
       const dim = off || !cfg.show ? " disabled" : "";
       return `
       <div class="pbar" data-provider="${escapeHtml(id)}">
@@ -532,7 +558,7 @@ function renderConnections() {
     .map((c) => {
       if (c.kind !== "cli") return renderOtherConnection(c);
       const st = connStatus(c.provider);
-      const icon = PROVIDER_ICON[c.provider];
+      const icon = providerIcon(c.provider);
       const login = loginState[c.provider] ?? {};
       const connected = st.cls === "ok";
       let action;
@@ -542,7 +568,7 @@ function renderConnections() {
         action = `<button class="text" data-act="cancel">${escapeHtml(t("conn.cancel"))}</button>`;
       } else {
         const expired = latest.find((x) => x.provider === c.provider)?.status === "token_expired";
-        action = `<button class="text" data-act="login">${escapeHtml(t(connected || expired ? "conn.reconnect" : "conn.connect"))}</button>`;
+        action = `<button class="text" data-act="login" ${c.login_blocked ? "disabled" : ""}>${escapeHtml(t(connected || expired ? "conn.reconnect" : "conn.connect"))}</button>`;
         if (connected || expired)
           action = `<div class="actions">${action}<button class="text" data-act="logout">${escapeHtml(t("conn.disconnect"))}</button></div>`;
       }
@@ -561,10 +587,12 @@ function renderConnections() {
           : "";
       const logoutBox = login.confirmLogout
         ? `<div class="login">
-            <span>${escapeHtml(t("conn.logout_confirm", { name: c.name })).replace(
-              "{command}",
-              `<code>${escapeHtml(c.provider === "claude" ? "claude auth logout" : "codex logout")}</code>`
-            )}</span>
+            <span>${c.supports_hooks
+              ? escapeHtml(t("conn.logout_confirm", { name: c.name })).replace(
+                  "{command}",
+                  `<code>${escapeHtml(c.provider === "claude" ? "claude auth logout" : "codex logout")}</code>`
+                )
+              : `${escapeHtml(c.name)} · ${escapeHtml(t("conn.disconnect"))}`}</span>
             <div class="row">
               <button class="text" data-act="logout-confirm">${escapeHtml(t("conn.disconnect"))}</button>
               <button class="text" data-act="logout-cancel">${escapeHtml(t("conn.cancel"))}</button>
@@ -598,8 +626,8 @@ function renderConnections() {
           ${action}
         </div>
         ${loginBox}${logoutBox}${install}
-        <label class="pref"><span><input type="checkbox" data-act="hooks" ${c.hooks_installed ? "checked" : ""} ${c.cli_path ? "" : "disabled"} />
-          ${escapeHtml(t("conn.hooks"))}</span></label>
+        ${c.supports_hooks ? `<label class="pref"><span><input type="checkbox" data-act="hooks" ${c.hooks_installed ? "checked" : ""} ${c.cli_path ? "" : "disabled"} />
+          ${escapeHtml(t("conn.hooks"))}</span></label>` : ""}
       </div>`;
     })
     .join("");
@@ -608,7 +636,7 @@ function renderConnections() {
 /** Providers signed in elsewhere (Copilot, Cursor) or with an API key (OpenRouter). */
 function renderOtherConnection(c) {
   const st = c.disabled ? { text: t("conn.disabled"), cls: "bad" } : connStatus(c.provider);
-  const icon = PROVIDER_ICON[c.provider];
+  const icon = providerIcon(c.provider);
   const login = loginState[c.provider] ?? {};
   // Copilot/Cursor: "disconnect" stops tracking here, their sign-in stays.
   let action = "";
@@ -802,7 +830,7 @@ let widgetShown = [];
 function renderWidgetProviders() {
   widgetProviders.innerHTML = connectedIds()
     .map((id) => `<label><input type="checkbox" data-provider="${escapeHtml(id)}" ${widgetShown.includes(id) ? "checked" : ""} />
-      ${PROVIDER_ICON[id] ? `<img src="${PROVIDER_ICON[id]}" alt="" />` : ""}${escapeHtml(PROVIDER_NAME[id] ?? id)}</label>`)
+      ${providerIcon(id) ? `<img src="${providerIcon(id)}" alt="" />` : ""}${escapeHtml(PROVIDER_NAME[id] ?? id)}</label>`)
     .join("");
 }
 widgetProviders.addEventListener("change", (e) => {

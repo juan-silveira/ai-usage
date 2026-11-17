@@ -159,6 +159,7 @@ mod tests {
             state,
             detail: None,
             detail_kind: None,
+            pending_questions: Vec::new(),
             model: None,
             turn_started_at: None,
             last_turn_secs: Some(400),

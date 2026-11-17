@@ -6,6 +6,7 @@
 //! refresh tokens, so refreshing here could log the user out of the CLI.
 
 pub mod cli_locate;
+pub mod codex_questions;
 pub mod hook_install;
 pub mod i18n;
 pub mod model;
