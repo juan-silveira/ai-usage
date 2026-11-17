@@ -1098,6 +1098,11 @@ fn main() {
         ])
         .setup(|app| {
             migrate::legacy_name(app.handle());
+            // A menu bar app on macOS: no Dock icon or Cmd-Tab entry
+            // (skipTaskbar has no effect there).
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let settings = Settings::load(app.handle());
             i18n::set_locale(&settings.language);
             app.state::<Snapshot>()

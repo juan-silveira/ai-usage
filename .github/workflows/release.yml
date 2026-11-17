@@ -64,8 +64,11 @@ jobs:
             - Windows: `.msi` or `-setup.exe`
             - macOS: `.dmg` (aarch64 = Apple Silicon, x64 = Intel)
 
-            The builds are not signed: on macOS, right-click the app → Open;
-            on Windows, "More info" → "Run anyway".
+            macOS: the app is signed ad hoc, not notarized. On first launch,
+            click Done, then System Settings → Privacy & Security → "Open
+            Anyway" (or run `xattr -dr com.apple.quarantine "/Applications/AI Usage.app"`).
+            Choose "Always Allow" when asked about the Keychain.
+            Windows: the installer isn't signed — "More info" → "Run anyway".
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

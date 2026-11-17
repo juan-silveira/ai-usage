@@ -47,9 +47,30 @@ one file plus one line in `crates/core/src/i18n.rs`.
 Download the installer for your system from
 [Releases](https://github.com/juan-silveira/ai-usage/releases):
 `.deb`/`.rpm`/`.AppImage` (Linux), `.msi`/`-setup.exe` (Windows) or `.dmg`
-(macOS — `aarch64` for Apple Silicon, `x64` for Intel). The builds are not
-signed: on macOS right-click the app → Open; on Windows, "More info" → "Run
-anyway".
+(macOS — `aarch64` for Apple Silicon, `x64` for Intel). On Windows the
+installer isn't signed: "More info" → "Run anyway".
+
+### macOS
+
+The app is signed ad hoc, not with an Apple Developer ID, so the first launch
+needs one extra step:
+
+1. Open the `.dmg` and drag **AI Usage** to **Applications**.
+2. Open it. macOS says it can't verify the developer — click **Done**.
+3. Go to **System Settings → Privacy & Security**, scroll down and click
+   **Open Anyway** next to "AI Usage was blocked", then confirm.
+
+Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/AI Usage.app"`.
+
+If macOS instead says the app **"is damaged and can't be opened"**, you have
+a version before 0.3.5 (unsigned bundle): update, or run the `xattr` command
+above.
+
+When the app first reads Claude Code's sign-in from the Keychain, macOS asks
+for permission: choose **Always Allow** — with "Allow" it asks again on every
+check.
+
+AI Usage lives in the menu bar (no Dock icon).
 
 On **Linux Mint / Cinnamon, use the `.deb`**: the usage text in the panel
 comes from the system's libxapp, which the AppImage can't load (it bundles an
